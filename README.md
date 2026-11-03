@@ -1,48 +1,55 @@
-# Inventaris rookkoepels en gasinstallaties
+# Rookgas – inventaris rookkoepels en gasinstallaties
 
-Webapp om rookkoepels en gasinstallaties in de gebouwen van de organisatie te inventariseren, met locatie en foto per onderdeel. Werkt op PC en smartphone; op de smartphone opent "Foto nemen" rechtstreeks de camera.
+Webapp om rookkoepels en gasinstallaties in de gebouwen van de organisatie te inventariseren, met locatie en foto per onderdeel.
+Werkt op PC en smartphone, en is op de smartphone te installeren als app (knop **App installeren**).
+Op de smartphone opent **Foto nemen** rechtstreeks de camera.
+
+De app is een statische pagina (GitHub Pages). Gegevens en foto's staan in Supabase, in hetzelfde project als de
+veiligheidsrondes en de staalnamen. Wat je op de gsm ingeeft, staat meteen ook op de PC. Collega's melden zich aan
+met een link die ze per e-mail krijgen; wie in de toegangslijst van de veiligheidsrondes staat, heeft ook hier toegang.
 
 ## Wat wordt geregistreerd
 
-**Rookkoepels**
-- Gebouw en nummer (automatisch RK-01, RK-02, …)
-- Koepel: gang, verdiep, foto
-- Bediening: lokaal, verdiep, foto
+**Rookkoepels**: gebouw en nummer (automatisch RK-01, RK-02, …), de koepel (gang, verdiep, foto) en de bediening (lokaal, verdiep, foto).
 
-**Gasinstallaties** (gebouw en naam, automatisch GAS-01, …)
-- Gasinstallatie, ketels, noodknop, gasklep, gasdetectie
-- Per onderdeel: lokaal/plaats, verdiep, opmerking, foto. Van elk onderdeel kunnen er meerdere zijn.
+**Gasinstallaties** (gebouw en naam, automatisch GAS-01, …): gasinstallatie, ketels, noodknop, gasklep en gasdetectie.
+Per onderdeel lokaal/plaats, verdiep, opmerking en foto. Van elk onderdeel kunnen er meerdere zijn.
 
-**Excel-export**: tabbladen *Rookkoepels* en *Gasinstallaties*, met filters en optioneel de foto's als miniatuur in de cellen. Exporteren kan voor alle gebouwen of voor één gebouw.
+**Excel-export**: tabbladen *Rookkoepels* en *Gasinstallaties*, met filters en optioneel de foto's als miniatuur in de cellen,
+voor alle gebouwen of voor één gebouw.
+
+## Eenmalige opzet
+
+1. **Database**: open in Supabase de *SQL Editor*, plak de inhoud van [`supabase/schema.sql`](supabase/schema.sql) en klik *Run*.
+   Het script maakt de tabellen `rookkoepels` en `gasinstallaties` en de privé-bucket `rookgas-fotos`.
+2. **Aanmeldlink**: ga naar *Authentication > URL Configuration* en voeg bij *Redirect URLs* het adres van de app toe:
+   `https://obscuritatis.github.io/rookgas/`.
+3. **GitHub Pages**: repository > *Settings > Pages* > *Deploy from a branch* > `main` / `(root)`.
+4. **Collega's toegang geven** (als ze nog niet in de lijst staan), in de SQL Editor:
+   ```sql
+   insert into public.toegang (email) values ('naam@voorbeeld.be');
+   ```
+
+## Installeren op de smartphone
+
+- **Android (Chrome)**: open de app en tik op **App installeren** bovenaan.
+- **iPhone/iPad (Safari)**: tik op **App installeren** voor de stappen, of rechtstreeks: *Deel* > *Zet op beginscherm*.
+- **PC (Chrome/Edge)**: de knop **App installeren** werkt daar ook.
 
 ## Opbouw
 
-Eén bestand, `index.html`, zonder buildstap.
+- `index.html`: opmaak en schermen. `app.js`: werking. `config.js`: adres en publieke sleutel van het Supabase-project.
+- `sw.js` + `manifest.webmanifest` + `icons/`: installeerbare app; de app opent ook zonder verbinding en toont foto's die al eens geladen werden.
+- `vendor/`: supabase-js 2.116.0 en ExcelJS 4.4.0, op de site zelf. `fonts/`: Barlow Condensed en IBM Plex Sans.
+- Foto's worden in de browser verkleind tot max. 1600 px (JPEG) en staan in de bucket onder `rookkoepels/<id>/` of `gasinstallaties/<id>/`.
 
-- Excel wordt gemaakt met [ExcelJS](https://github.com/exceljs/exceljs) 4.4.0, geladen via jsDelivr op het moment van exporteren.
-- Foto's worden in de browser verkleind tot max. 1600 px (JPEG).
-- Opslag:
-  - **Als Claude-artifact** gebruikt de app de gedeelde opslag van het artifact (`db` voor de fiches, `assets` voor de foto's). Gegevens zijn dan gelijk op PC en gsm.
-  - **Los geopend** (bv. via GitHub Pages of als lokaal bestand) valt de app terug op IndexedDB: de gegevens blijven dan alleen in die browser op dat toestel. Voor gedeelde opslag buiten Claude is nog een backend nodig.
+## Beveiliging
 
-## Datamodel
+- Een Content Security Policy in `index.html` laat alleen code van de site zelf toe en verbindt enkel met het eigen Supabase-project.
+  Verandert het project, pas dan ook het adres in die regel aan.
+- De publieke sleutel in `config.js` mag publiek staan: wie gegevens mag zien, bepaalt de database (Row Level Security + tabel `toegang`).
 
-Elke fiche is één document:
+## Opmerkingen
 
-```js
-// Rookkoepel
-{ soort: "rookkoepel", gebouw, code, opmerking, aangemaakt, gewijzigd,
-  koepel:    { gang, verdiep, foto },
-  bediening: { lokaal, verdiep, foto } }
-
-// Gasinstallatie
-{ soort: "gas", gebouw, code, opmerking, aangemaakt, gewijzigd,
-  onderdelen: { gasinstallatie: [...], ketels: [...], noodknop: [...], gasklep: [...], gasdetectie: [...] } }
-// elk onderdeel: { lokaal, verdiep, opmerking, foto }
-```
-
-`foto` is een verwijzing naar de opgeslagen foto (asset-id in Claude, `local:<id>` in IndexedDB).
-
-## Lokaal proberen
-
-Open `index.html` in een browser, of start een eenvoudige webserver in deze map (bv. `python3 -m http.server`) en surf naar http://localhost:8000.
+- Opslaan en foto's opladen vraagt een internetverbinding. Zonder netwerk opent de app wel, maar bewaart ze nog niets.
+- Een gratis Supabase-project wordt gepauzeerd na een week zonder gebruik; je zet het terug aan in het dashboard.

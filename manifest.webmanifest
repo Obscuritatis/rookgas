@@ -1,0 +1,18 @@
+{
+  "id": "/rookgas/",
+  "name": "Rookgas – inventaris rookkoepels en gasinstallaties",
+  "short_name": "Rookgas",
+  "description": "Rookkoepels en gasinstallaties inventariseren met locatie, foto's en Excel-export.",
+  "lang": "nl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f5f7",
+  "theme_color": "#1f4e79",
+  "icons": [
+    { "src": "icons/icoon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icoon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icoon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icoon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
