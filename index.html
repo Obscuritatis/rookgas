@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Inventaris rookkoepels en gas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: sticky werkbalk met tabbladen bovenaan, daaronder een raster van fichekaarten; bewerken gebeurt in een paneel dat op gsm schermvullend opent. */
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --surface-2: #e9edf1;
+  --line: #d3dae2;
+  --fg: #17202a;
+  --muted: #5b6875;
+  --accent: #1f4e79;
+  --accent-fg: #ffffff;
+  --rook: #c8321f;
+  --rook-soft: #fbe6e2;
+  --gas: #b57800;
+  --gas-soft: #fdf0d2;
+  --ok: #2f7d4f;
+  --ok-soft: #dff1e6;
+  --warn: #9a5b00;
+  --danger: #b3261e;
+  --shadow: 0 1px 2px rgba(23, 32, 42, .06), 0 4px 14px rgba(23, 32, 42, .06);
+  --f-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #1a2129; --surface-2: #232c36; --line: #333e4a;
+    --fg: #e7ecf1; --muted: #9aa7b4; --accent: #7fb2e5; --accent-fg: #0d1620;
+    --rook: #ff7a66; --rook-soft: #3a1f1b; --gas: #f2b544; --gas-soft: #362a12;
+    --ok: #6fcf97; --ok-soft: #173325; --warn: #f2b544; --danger: #ff8a80;
+    --shadow: 0 1px 2px rgba(0,0,0,.4); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #1a2129; --surface-2: #232c36; --line: #333e4a;
+  --fg: #e7ecf1; --muted: #9aa7b4; --accent: #7fb2e5; --accent-fg: #0d1620;
+  --rook: #ff7a66; --rook-soft: #3a1f1b; --gas: #f2b544; --gas-soft: #362a12;
+  --ok: #6fcf97; --ok-soft: #173325; --warn: #f2b544; --danger: #ff8a80;
+  --shadow: 0 1px 2px rgba(0,0,0,.4); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 16px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* Kop */
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; flex-direction: column; gap: 10px; padding-block: 12px 0; }
+.brand { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
+.brand h1 { font-family: var(--f-display); font-weight: 700; font-size: 1.45rem; letter-spacing: .01em; margin: 0; line-height: 1.1; text-wrap: balance; }
+.brand h1 small { display: block; font-family: var(--f-body); font-weight: 400; font-size: .82rem; color: var(--muted); letter-spacing: 0; }
+.mode { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); }
+.mode i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.mode.shared i { background: var(--ok); }
+.mode.local i { background: var(--warn); }
+.tabs { display: flex; gap: 4px; overflow-x: auto; }
+.tab { border: 0; background: none; padding: 10px 14px; font-family: var(--f-display); font-weight: 600; font-size: 1.05rem; color: var(--muted); border-bottom: 3px solid transparent; cursor: pointer; white-space: nowrap; display: inline-flex; gap: 8px; align-items: center; }
+.tab .n { font-family: var(--f-mono); font-size: .78rem; background: var(--surface-2); color: var(--fg); border-radius: 99px; padding: 1px 8px; }
+.tab[aria-selected="true"][data-tab="rook"] { color: var(--rook); border-color: var(--rook); }
+.tab[aria-selected="true"][data-tab="gas"] { color: var(--gas); border-color: var(--gas); }
+
+/* Werkbalk */
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding-block: 16px; }
+.toolbar .search { flex: 1 1 220px; min-width: 0; }
+.toolbar select { flex: 0 1 200px; min-width: 0; }
+input[type="text"], input[type="search"], select, textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); min-height: 44px;
+}
+textarea { min-height: 70px; resize: vertical; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 600; white-space: nowrap; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.danger { color: var(--danger); }
+.btn.danger.armed { background: var(--danger); color: var(--surface); border-color: var(--danger); }
+.btn.small { min-height: 36px; padding: 4px 10px; font-size: .9rem; }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn svg { width: 18px; height: 18px; flex: none; }
+
+/* Samenvatting */
+.summary { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: .9rem; color: var(--muted); padding-bottom: 12px; }
+.summary b { color: var(--fg); font-variant-numeric: tabular-nums; }
+
+/* Kaarten */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 14px; padding-bottom: 40px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); padding: 14px; display: flex; flex-direction: column; gap: 12px; cursor: pointer; text-align: left; min-width: 0; }
+.card:hover { border-color: var(--muted); }
+.card-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.code { font-family: var(--f-mono); font-weight: 500; font-size: .85rem; padding: 2px 8px; border-radius: 6px; }
+.rook .code { background: var(--rook-soft); color: var(--rook); }
+.gas .code { background: var(--gas-soft); color: var(--gas); }
+.card h3 { margin: 0; font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; line-height: 1.2; min-width: 0; overflow-wrap: anywhere; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.slot .lbl { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 700; }
+.slot .loc { font-size: .92rem; overflow-wrap: anywhere; }
+.thumb { aspect-ratio: 4 / 3; width: 100%; max-width: 100%; border-radius: 8px; background: var(--surface-2); object-fit: cover; display: block; }
+.thumb.empty { display: grid; place-items: center; color: var(--muted); font-size: .8rem; border: 1px dashed var(--line); }
+.parts { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: .8rem; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
+.chip.ok { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+.chip.half { background: var(--gas-soft); border-color: transparent; color: var(--warn); }
+.strip { display: flex; gap: 6px; overflow: hidden; }
+.strip img, .strip .ph { width: 64px; height: 48px; border-radius: 6px; object-fit: cover; flex: none; background: var(--surface-2); }
+.foot { font-size: .78rem; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.status { font-weight: 600; }
+.status.ok { color: var(--ok); }
+.status.todo { color: var(--warn); }
+
+.empty-state { grid-column: 1 / -1; background: var(--surface); border: 1px dashed var(--line); border-radius: var(--r); padding: 32px 20px; text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.empty-state h2 { margin: 0; font-family: var(--f-display); font-size: 1.3rem; }
+.empty-state p { margin: 0; color: var(--muted); max-width: 52ch; }
+
+/* Bewerkpaneel */
+dialog.sheet { border: 0; padding: 0; width: min(760px, 100vw); max-width: 100vw; max-height: 100dvh; height: auto; border-radius: 14px; background: var(--bg); color: var(--fg); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+dialog.sheet::backdrop { background: rgba(10, 16, 22, .55); }
+@media (max-width: 640px) {
+  dialog.sheet { width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; margin: 0; }
+}
+.sheet form { display: flex; flex-direction: column; height: 100%; max-height: inherit; }
+.sheet-head, .sheet-foot { background: var(--surface); padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; align-items: center; gap: 10px; }
+.sheet-head { border-bottom: 1px solid var(--line); justify-content: space-between; padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
+.sheet-head h2 { margin: 0; font-family: var(--f-display); font-size: 1.3rem; }
+.sheet-foot { border-top: 1px solid var(--line); justify-content: space-between; flex-wrap: wrap; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+.sheet-foot .right { display: flex; gap: 8px; margin-left: auto; }
+.sheet-body { overflow-y: auto; padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 16px; flex: 1; }
+fieldset { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 14px; margin: 0; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+legend { font-family: var(--f-display); font-weight: 700; font-size: 1.05rem; padding: 0 6px; }
+.rookf legend { color: var(--rook); }
+.gasf legend { color: var(--gas); }
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; }
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; font-weight: 600; color: var(--muted); min-width: 0; }
+label.f > span em { font-style: normal; font-weight: 400; }
+.photo { display: grid; grid-template-columns: 140px 1fr; gap: 12px; align-items: center; }
+@media (max-width: 420px) { .photo { grid-template-columns: 1fr; } }
+.photo .thumb { width: 140px; max-width: 100%; }
+@media (max-width: 420px) { .photo .thumb { width: 100%; } }
+.photo .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.photo .busy { font-size: .85rem; color: var(--muted); }
+.entry { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.entry:first-of-type { border-top: 0; padding-top: 0; }
+.entry-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.entry-head b { font-size: .9rem; }
+.hint { font-size: .85rem; color: var(--muted); margin: 0; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Export */
+.export-opts { display: flex; flex-direction: column; gap: 10px; }
+.check { display: flex; gap: 10px; align-items: center; font-weight: 600; }
+.check input { width: 20px; height: 20px; }
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-weight: 600; z-index: 50; max-width: calc(100vw - 32px); box-shadow: var(--shadow); }
+.loading { color: var(--muted); padding: 24px 0; }
+@media (prefers-reduced-motion: no-preference) { .card { transition: border-color .15s; } }
+</style>
+
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <h1>Inventaris rookkoepels &amp; gasinstallaties<small>Locaties en foto's van toestellen per gebouw</small></h1>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span class="mode" id="mode"><i></i><span>Verbinden…</span></span>
+        <button class="btn" type="button" id="btnExport">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3"/></svg>
+          Excel-export
+        </button>
+      </div>
+    </div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="rook" id="tab-rook" aria-selected="true">Rookkoepels <span class="n" id="n-rook">0</span></button>
+      <button class="tab" role="tab" data-tab="gas" id="tab-gas" aria-selected="false">Gasinstallaties <span class="n" id="n-gas">0</span></button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="toolbar">
+    <input class="search" type="search" id="q" placeholder="Zoek op code, gang, lokaal, verdiep…" aria-label="Zoeken">
+    <select id="fGebouw" aria-label="Filter op gebouw"><option value="">Alle gebouwen</option></select>
+    <button class="btn primary" type="button" id="btnNew">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      <span id="btnNewLbl">Nieuwe rookkoepel</span>
+    </button>
+  </div>
+  <div class="summary" id="summary"></div>
+  <div class="grid" id="list"><p class="loading">Gegevens laden…</p></div>
+</main>
+
+<dialog class="sheet" id="editor"><form id="editForm" method="dialog" novalidate></form></dialog>
+
+<dialog class="sheet" id="exportDlg">
+  <form method="dialog" id="exportForm">
+    <div class="sheet-head"><h2>Excel-export</h2><button class="btn small" value="cancel" type="submit">Sluiten</button></div>
+    <div class="sheet-body">
+      <fieldset class="export-opts">
+        <legend>Wat moet erin?</legend>
+        <label class="check"><input type="checkbox" id="exRook" checked> Tabblad Rookkoepels</label>
+        <label class="check"><input type="checkbox" id="exGas" checked> Tabblad Gasinstallaties</label>
+        <label class="check"><input type="checkbox" id="exFotos" checked> Foto's als miniatuur in de cellen</label>
+        <label class="f"><span>Gebouw</span><select id="exGebouw"><option value="">Alle gebouwen</option></select></label>
+        <p class="hint">Met foto's wordt het bestand groter en duurt de export iets langer. Zonder foto's krijg je een lichte lijst om te filteren en sorteren.</p>
+      </fieldset>
+      <p class="hint" id="exStatus" aria-live="polite"></p>
+    </div>
+    <div class="sheet-foot"><div class="right"><button class="btn primary" type="button" id="btnDoExport">Excel maken</button></div></div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(() => {
+"use strict";
+
+/* ---------- Begrippen ---------- */
+const GAS_PARTS = [
+  { key: "gasinstallatie", label: "Gasinstallatie", one: "gasinstallatie", more: "Nog een gasinstallatie" },
+  { key: "ketels", label: "Ketels", one: "ketel", more: "Nog een ketel" },
+  { key: "noodknop", label: "Noodknop", one: "noodknop", more: "Nog een noodknop" },
+  { key: "gasklep", label: "Gasklep", one: "gasklep", more: "Nog een gasklep" },
+  { key: "gasdetectie", label: "Gasdetectie", one: "gasdetectie", more: "Nog een gasdetectie" },
+];
+
+/* ---------- Hulpjes ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const nowIso = () => new Date().toISOString();
+const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString("nl-BE", { day: "2-digit", month: "2-digit", year: "numeric" }); } catch { return ""; } };
+const loc = (a, b) => [a, b].filter((x) => x && String(x).trim()).join(" · ");
+const verd = (v) => (v && String(v).trim() ? "verdiep " + v : "");
+let toastTimer;
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3200); }
+
+/* ---------- Opslag ---------- */
+// Gedeelde opslag (claude.ai): db + assets. Anders: IndexedDB op dit toestel.
+const Store = {
+  mode: "pending", items: [], onChange: () => {},
+  db: null, assets: null, downloads: null, idb: null, urlCache: new Map(),
+
+  async init() {
+    const hasClaude = window.claude && typeof window.claude.use === "function";
+    if (hasClaude) {
+      try {
+        const [db, assets, downloads] = await Promise.all([window.claude.use("db"), window.claude.use("assets"), window.claude.use("downloads")]);
+        this.downloads = downloads;
+        if (db) {
+          this.db = db; this.assets = assets; this.mode = "shared";
+          this.subscribe();
+          return;
+        }
+      } catch (e) { console.warn(e); }
+    }
+    this.mode = "local";
+    await this.openIdb();
+    await this.reloadLocal();
+  },
+
+  subscribe() {
+    const timer = setTimeout(() => { if (!this.loaded) setMode("Gegevens nog niet bereikbaar", "local"); }, 10000);
+    this.db.collection("items").onSnapshot((snap) => {
+      if (!snap.metadata.fromCache) { clearTimeout(timer); this.loaded = true; }
+      this.items = snap.docs.map((d) => ({ id: d.id, ...JSON.parse(JSON.stringify(d.data())) }));
+      this.onChange();
+    }, (err) => { clearTimeout(timer); console.error(err); setMode("Opslag niet bereikbaar", "local"); toast("De gedeelde opslag is niet bereikbaar. Herlaad de pagina."); });
+  },
+
+  async save(item) {
+    item.gewijzigd = nowIso();
+    if (!item.aangemaakt) item.aangemaakt = item.gewijzigd;
+    const { id, ...data } = item;
+    if (this.mode === "shared") { await this.db.collection("items").doc(id).set(data); }
+    else { await this.idbPut("items", { id, ...data }); await this.reloadLocal(); }
+  },
+
+  async remove(id) {
+    if (this.mode === "shared") await this.db.collection("items").doc(id).delete();
+    else { await this.idbDel("items", id); await this.reloadLocal(); }
+  },
+
+  canPhoto() { return this.mode === "local" || !!this.assets; },
+
+  async uploadPhoto(blob) {
+    if (this.mode === "shared") {
+      if (!this.assets) throw new Error("Je hebt geen rechten om foto's op te laden in deze gedeelde inventaris.");
+      const r = await this.assets.upload(blob, { type: "image/jpeg" });
+      this.urlCache.set(r.id, r.url);
+      return r.id;
+    }
+    const ref = "local:" + uid();
+    await this.idbPut("photos", { id: ref, blob });
+    return ref;
+  },
+
+  async deletePhoto(ref) {
+    if (!ref) return;
+    try {
+      if (ref.startsWith("local:")) await this.idbDel("photos", ref);
+      else if (this.assets) await this.assets.delete(ref);
+    } catch (e) { console.warn("Foto niet verwijderd", e); }
+  },
+
+  photoUrl(ref) {
+    if (!ref) return "";
+    if (this.urlCache.has(ref)) return this.urlCache.get(ref);
+    if (ref.startsWith("local:")) return "";
+    return "/_blob/" + ref;
+  },
+  async photoBlob(ref) {
+    if (ref.startsWith("local:")) { const r = await this.idbGet("photos", ref); return r ? r.blob : null; }
+    const res = await fetch(this.photoUrl(ref)); if (!res.ok) return null; return await res.blob();
+  },
+
+  /* IndexedDB */
+  openIdb() {
+    return new Promise((resolve) => {
+      try {
+        const req = indexedDB.open("inventaris-rook-gas", 1);
+        req.onupgradeneeded = () => { const d = req.result; d.createObjectStore("items", { keyPath: "id" }); d.createObjectStore("photos", { keyPath: "id" }); };
+        req.onsuccess = () => { this.idb = req.result; resolve(); };
+        req.onerror = () => { this.idb = null; resolve(); };
+      } catch { this.idb = null; resolve(); }
+    });
+  },
+  tx(store, mode, fn) {
+    return new Promise((resolve, reject) => {
+      if (!this.idb) return reject(new Error("Opslag op dit toestel is niet beschikbaar (privévenster?)."));
+      const t = this.idb.transaction(store, mode); const r = fn(t.objectStore(store));
+      t.oncomplete = () => resolve(r && r.result); t.onerror = () => reject(t.error);
+    });
+  },
+  idbPut(s, v) { return this.tx(s, "readwrite", (o) => o.put(v)); },
+  idbDel(s, k) { return this.tx(s, "readwrite", (o) => o.delete(k)); },
+  idbGet(s, k) { return this.tx(s, "readonly", (o) => o.get(k)); },
+  async reloadLocal() {
+    try { this.items = (await this.tx("items", "readonly", (o) => o.getAll())) || []; } catch { this.items = []; }
+    // Object-URL's voor lokale foto's klaarzetten
+    const refs = new Set();
+    for (const it of this.items) for (const r of photoRefs(it)) refs.add(r);
+    for (const r of refs) {
+      if (!this.urlCache.has(r)) { const b = await this.photoBlob(r).catch(() => null); if (b) this.urlCache.set(r, URL.createObjectURL(b)); }
+    }
+    this.onChange();
+  },
+  async cacheLocalBlob(ref, blob) { if (ref.startsWith("local:")) this.urlCache.set(ref, URL.createObjectURL(blob)); },
+};
+
+function photoRefs(it) {
+  const out = [];
+  if (it.soort === "rookkoepel") { if (it.koepel?.foto) out.push(it.koepel.foto); if (it.bediening?.foto) out.push(it.bediening.foto); }
+  else if (it.soort === "gas") { for (const p of GAS_PARTS) for (const e of it.onderdelen?.[p.key] || []) if (e.foto) out.push(e.foto); }
+  return out;
+}
+
+function setMode(text, cls) { const m = $("#mode"); m.className = "mode " + cls; m.querySelector("span").textContent = text; }
+
+/* ---------- Foto's verkleinen ---------- */
+async function shrink(file, max = 1600, q = 0.82) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Dit bestand is geen leesbare foto.")); i.src = url; });
+    const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise((res) => c.toBlob(res, "image/jpeg", q));
+  } finally { URL.revokeObjectURL(url); }
+}
+
+/* ---------- Toestand ---------- */
+const state = { tab: "rook", q: "", gebouw: "" };
+try { const t = localStorage.getItem("inv-tab"); if (t === "rook" || t === "gas") state.tab = t; } catch {}
+
+function itemsOf(tab) { return Store.items.filter((i) => i.soort === (tab === "rook" ? "rookkoepel" : "gas")); }
+function sortItems(a) { return a.slice().sort((x, y) => (x.gebouw || "").localeCompare(y.gebouw || "", "nl") || (x.code || "").localeCompare(y.code || "", "nl", { numeric: true })); }
+function textOf(it) {
+  const parts = [it.gebouw, it.code, it.opmerking];
+  if (it.soort === "rookkoepel") parts.push(it.koepel?.gang, it.koepel?.verdiep, it.bediening?.lokaal, it.bediening?.verdiep);
+  else for (const p of GAS_PARTS) for (const e of it.onderdelen?.[p.key] || []) parts.push(e.lokaal, e.verdiep, e.opmerking, p.label);
+  return parts.filter(Boolean).join(" ").toLowerCase();
+}
+function distinct(fn) { const s = new Set(); for (const it of Store.items) for (const v of [].concat(fn(it))) if (v && String(v).trim()) s.add(String(v).trim()); return [...s].sort((a, b) => a.localeCompare(b, "nl", { numeric: true })); }
+function allEntries(it) { const out = []; for (const p of GAS_PARTS) for (const e of it.onderdelen?.[p.key] || []) out.push(e); return out; }
+
+function rookDone(it) { return !!(it.koepel?.foto && it.bediening?.foto && (it.koepel?.gang || it.koepel?.verdiep) && (it.bediening?.lokaal || it.bediening?.verdiep)); }
+function partState(it, key) {
+  const list = it.onderdelen?.[key] || [];
+  if (!list.length) return "none";
+  return list.every((e) => e.foto && (e.lokaal || e.verdiep)) ? "ok" : "half";
+}
+function gasDone(it) { return GAS_PARTS.every((p) => partState(it, p.key) === "ok"); }
+
+/* ---------- Weergave ---------- */
+function thumb(ref, alt) {
+  const u = Store.photoUrl(ref);
+  return u ? `<img class="thumb" src="${esc(u)}" alt="${esc(alt)}" loading="lazy">` : `<div class="thumb empty">${ref ? "Foto laden…" : "Geen foto"}</div>`;
+}
+
+function render() {
+  $("#n-rook").textContent = itemsOf("rook").length;
+  $("#n-gas").textContent = itemsOf("gas").length;
+  for (const b of document.querySelectorAll(".tab")) b.setAttribute("aria-selected", String(b.dataset.tab === state.tab));
+  $("#btnNewLbl").textContent = state.tab === "rook" ? "Nieuwe rookkoepel" : "Nieuwe gasinstallatie";
+
+  // Gebouwfilter
+  const gebouwen = distinct((i) => i.gebouw);
+  for (const sel of [$("#fGebouw"), $("#exGebouw")]) {
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">Alle gebouwen</option>` + gebouwen.map((g) => `<option>${esc(g)}</option>`).join("");
+    sel.value = gebouwen.includes(cur) ? cur : "";
+  }
+  state.gebouw = $("#fGebouw").value;
+
+  let list = itemsOf(state.tab);
+  const total = list.length;
+  if (state.gebouw) list = list.filter((i) => i.gebouw === state.gebouw);
+  if (state.q) { const q = state.q.toLowerCase(); list = list.filter((i) => textOf(i).includes(q)); }
+  list = sortItems(list);
+
+  const done = list.filter((i) => (i.soort === "rookkoepel" ? rookDone(i) : gasDone(i))).length;
+  $("#summary").innerHTML = total
+    ? `<span><b>${list.length}</b> ${state.tab === "rook" ? "rookkoepels" : "gasinstallaties"} getoond</span><span><b>${done}</b> volledig</span><span><b>${list.length - done}</b> nog aan te vullen</span>`
+    : "";
+
+  const el = $("#list");
+  if (Store.mode === "pending") { el.innerHTML = `<p class="loading">Gegevens laden…</p>`; return; }
+  if (!total) {
+    const rook = state.tab === "rook";
+    el.innerHTML = `<div class="empty-state">
+      <h2>${rook ? "Nog geen rookkoepels geregistreerd" : "Nog geen gasinstallaties geregistreerd"}</h2>
+      <p>${rook ? "Per rookkoepel noteer je waar de koepel zit (gang en verdiep) en waar de bediening hangt (lokaal en verdiep), telkens met een foto." : "Per installatie noteer je de gasinstallatie, ketels, noodknop, gasklep en gasdetectie, telkens met lokaal, verdiep en foto."}</p>
+      <button class="btn primary" type="button" data-new>${rook ? "Eerste rookkoepel toevoegen" : "Eerste gasinstallatie toevoegen"}</button></div>`;
+    return;
+  }
+  if (!list.length) { el.innerHTML = `<div class="empty-state"><h2>Niets gevonden</h2><p>Geen resultaten voor deze zoekopdracht of dit gebouw.</p></div>`; return; }
+  el.innerHTML = list.map((it) => (it.soort === "rookkoepel" ? rookCard(it) : gasCard(it))).join("");
+}
+
+function rookCard(it) {
+  const ok = rookDone(it);
+  return `<button type="button" class="card rook" data-id="${esc(it.id)}">
+    <div class="card-head"><h3>${esc(it.gebouw || "Gebouw onbekend")}</h3><span class="code">${esc(it.code || "—")}</span></div>
+    <div class="pair">
+      <div class="slot"><span class="lbl">Koepel</span>${thumb(it.koepel?.foto, "Foto koepel")}<span class="loc">${esc(loc(it.koepel?.gang, verd(it.koepel?.verdiep)) || "Locatie ontbreekt")}</span></div>
+      <div class="slot"><span class="lbl">Bediening</span>${thumb(it.bediening?.foto, "Foto bediening")}<span class="loc">${esc(loc(it.bediening?.lokaal, verd(it.bediening?.verdiep)) || "Locatie ontbreekt")}</span></div>
+    </div>
+    <div class="foot"><span class="status ${ok ? "ok" : "todo"}">${ok ? "Volledig" : "Aan te vullen"}</span><span>Gewijzigd ${esc(fmtDate(it.gewijzigd))}</span></div>
+  </button>`;
+}
+
+function gasCard(it) {
+  const ok = gasDone(it);
+  const chips = GAS_PARTS.map((p) => {
+    const st = partState(it, p.key); const n = (it.onderdelen?.[p.key] || []).length;
+    const mark = st === "ok" ? "✓" : st === "half" ? "…" : "–";
+    return `<span class="chip ${st === "ok" ? "ok" : st === "half" ? "half" : ""}">${mark} ${esc(p.label)}${n > 1 ? " ×" + n : ""}</span>`;
+  }).join("");
+  const refs = allEntries(it).map((e) => e.foto).filter(Boolean);
+  const strip = refs.slice(0, 6).map((r) => { const u = Store.photoUrl(r); return u ? `<img src="${esc(u)}" alt="" loading="lazy">` : `<span class="ph"></span>`; }).join("");
+  const where = distinct(() => allEntries(it).map((e) => e.verdiep)).length;
+  return `<button type="button" class="card gas" data-id="${esc(it.id)}">
+    <div class="card-head"><h3>${esc(it.gebouw || "Gebouw onbekend")}</h3><span class="code">${esc(it.code || "—")}</span></div>
+    <div class="parts">${chips}</div>
+    ${strip ? `<div class="strip">${strip}</div>` : ""}
+    <div class="foot"><span class="status ${ok ? "ok" : "todo"}">${ok ? "Volledig" : "Aan te vullen"}</span><span>${refs.length} foto's · gewijzigd ${esc(fmtDate(it.gewijzigd))}</span></div>
+  </button>`;
+}
+
+/* ---------- Bewerken ---------- */
+let edit = null; // { item, isNew, originalRefs:Set, newRefs:Set }
+
+function nextCode(prefix, soort) {
+  let max = 0;
+  for (const it of Store.items) if (it.soort === soort) { const m = String(it.code || "").match(/(\d+)\s*$/); if (m) max = Math.max(max, +m[1]); }
+  return prefix + String(max + 1).padStart(2, "0");
+}
+function blankGasEntry() { return { lokaal: "", verdiep: "", opmerking: "", foto: "" }; }
+
+function openEditor(item) {
+  const isNew = !item;
+  if (isNew) {
+    const lastGebouw = state.gebouw || "";
+    item = state.tab === "rook"
+      ? { id: uid(), soort: "rookkoepel", gebouw: lastGebouw, code: nextCode("RK-", "rookkoepel"), koepel: { gang: "", verdiep: "", foto: "" }, bediening: { lokaal: "", verdiep: "", foto: "" }, opmerking: "" }
+      : { id: uid(), soort: "gas", gebouw: lastGebouw, code: nextCode("GAS-", "gas"), onderdelen: Object.fromEntries(GAS_PARTS.map((p) => [p.key, [blankGasEntry()]])), opmerking: "" };
+  } else item = JSON.parse(JSON.stringify(item));
+  if (item.soort === "gas") for (const p of GAS_PARTS) if (!Array.isArray(item.onderdelen?.[p.key])) { item.onderdelen = item.onderdelen || {}; item.onderdelen[p.key] = []; }
+  edit = { item, isNew, originalRefs: new Set(photoRefs(item)), newRefs: new Set(), busy: 0 };
+  drawEditor();
+  $("#editor").showModal();
+}
+
+function dl(id, values) { return `<datalist id="${id}">${values.map((v) => `<option value="${esc(v)}">`).join("")}</datalist>`; }
+
+function photoField(path, ref, label) {
+  const u = Store.photoUrl(ref);
+  const can = Store.canPhoto();
+  return `<div class="photo" data-path="${esc(path)}">
+    ${u ? `<img class="thumb" src="${esc(u)}" alt="${esc(label)}">` : `<div class="thumb empty">Geen foto</div>`}
+    <div class="acts">
+      ${can ? `<label class="btn small primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Foto nemen<input class="vh" type="file" accept="image/*" capture="environment" data-photo="${esc(path)}"></label>
+      <label class="btn small">Kies bestand<input class="vh" type="file" accept="image/*" data-photo="${esc(path)}"></label>` : `<span class="hint">Je kan geen foto's toevoegen met je huidige rechten.</span>`}
+      ${ref ? `<button class="btn small danger" type="button" data-clear-photo="${esc(path)}">Foto weg</button>` : ""}
+    </div>
+  </div>`;
+}
+
+function inp(path, label, value, list, ph = "") {
+  const id = "f-" + path.replace(/[^a-z0-9]/gi, "-");
+  return `<label class="f" for="${id}"><span>${esc(label)}</span><input type="text" id="${id}" data-path="${esc(path)}" value="${esc(value)}" ${list ? `list="${list}"` : ""} placeholder="${esc(ph)}" autocomplete="off"></label>`;
+}
+
+function drawEditor() {
+  const it = edit.item;
+  const form = $("#editForm");
+  const scroll = form.querySelector(".sheet-body")?.scrollTop || 0;
+  const lists = dl("dl-gebouw", distinct((i) => i.gebouw)) +
+    dl("dl-verdiep", distinct((i) => i.soort === "rookkoepel" ? [i.koepel?.verdiep, i.bediening?.verdiep] : allEntries(i).map((e) => e.verdiep)).concat(["-1", "0", "1", "2", "3"]).filter((v, i, a) => a.indexOf(v) === i)) +
+    dl("dl-gang", distinct((i) => i.koepel?.gang)) +
+    dl("dl-lokaal", distinct((i) => i.soort === "rookkoepel" ? i.bediening?.lokaal : allEntries(i).map((e) => e.lokaal)));
+  let body = `<fieldset><legend>Algemeen</legend><div class="row">
+      ${inp("gebouw", "Gebouw / site", it.gebouw, "dl-gebouw", "bv. Hoofdgebouw")}
+      ${inp("code", it.soort === "rookkoepel" ? "Nummer koepel" : "Naam installatie", it.code, null, it.soort === "rookkoepel" ? "RK-01" : "GAS-01")}
+    </div></fieldset>`;
+  if (it.soort === "rookkoepel") {
+    body += `<fieldset class="rookf"><legend>Rookkoepel</legend><div class="row">
+        ${inp("koepel.gang", "Gang", it.koepel.gang, "dl-gang", "bv. Gang B-vleugel")}
+        ${inp("koepel.verdiep", "Verdiep", it.koepel.verdiep, "dl-verdiep", "bv. 2")}
+      </div>${photoField("koepel.foto", it.koepel.foto, "Foto koepel")}</fieldset>
+      <fieldset class="rookf"><legend>Bediening</legend><div class="row">
+        ${inp("bediening.lokaal", "Lokaal", it.bediening.lokaal, "dl-lokaal", "bv. B.012")}
+        ${inp("bediening.verdiep", "Verdiep", it.bediening.verdiep, "dl-verdiep", "bv. 0")}
+      </div>${photoField("bediening.foto", it.bediening.foto, "Foto bediening")}</fieldset>`;
+  } else {
+    for (const p of GAS_PARTS) {
+      const list = it.onderdelen[p.key];
+      body += `<fieldset class="gasf"><legend>${esc(p.label)}</legend>`;
+      if (!list.length) body += `<p class="hint">Niet aanwezig of nog niet geregistreerd.</p>`;
+      list.forEach((e, i) => {
+        const base = `onderdelen.${p.key}.${i}`;
+        body += `<div class="entry">
+          ${list.length > 1 || i > 0 ? `<div class="entry-head"><b>${esc(p.one[0].toUpperCase() + p.one.slice(1))} ${i + 1}</b><button class="btn small danger" type="button" data-remove-entry="${p.key}.${i}">Verwijder</button></div>` : ""}
+          <div class="row">
+            ${inp(base + ".lokaal", "Lokaal / plaats", e.lokaal, "dl-lokaal", "bv. Stookplaats")}
+            ${inp(base + ".verdiep", "Verdiep", e.verdiep, "dl-verdiep", "bv. -1")}
+          </div>
+          ${inp(base + ".opmerking", "Opmerking", e.opmerking, null, p.key === "ketels" ? "bv. merk, type, vermogen" : "")}
+          ${photoField(base + ".foto", e.foto, "Foto " + p.one)}
+          ${list.length === 1 && i === 0 ? `<div><button class="btn small danger" type="button" data-remove-entry="${p.key}.${i}">Niet aanwezig</button></div>` : ""}
+        </div>`;
+      });
+      body += `<div><button class="btn small" type="button" data-add-entry="${p.key}">+ ${esc(list.length ? p.more : "Toevoegen")}</button></div></fieldset>`;
+    }
+  }
+  body += `<fieldset><legend>Opmerking</legend><label class="f vh-label" for="f-opmerking"><span class="vh">Opmerking</span><textarea id="f-opmerking" data-path="opmerking" placeholder="Bijzonderheden, staat, toegang…">${esc(it.opmerking)}</textarea></label></fieldset>`;
+
+  form.innerHTML = `
+    <div class="sheet-head"><h2>${edit.isNew ? (it.soort === "rookkoepel" ? "Nieuwe rookkoepel" : "Nieuwe gasinstallatie") : esc(it.code || "Bewerken")}</h2>
+      <button class="btn small" type="button" data-cancel>Annuleren</button></div>
+    <div class="sheet-body">${lists}${body}</div>
+    <div class="sheet-foot">
+      ${edit.isNew ? "" : `<button class="btn danger" type="button" data-delete>Verwijderen</button>`}
+      <div class="right"><button class="btn primary" type="button" data-save>Opslaan</button></div>
+    </div>`;
+  form.querySelector(".sheet-body").scrollTop = scroll;
+}
+
+function getPath(obj, path) { return path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj); }
+function setPath(obj, path, v) { const ks = path.split("."); const last = ks.pop(); const t = ks.reduce((o, k) => o[k], obj); t[last] = v; }
+
+function cleaned(item) {
+  const it = JSON.parse(JSON.stringify(item));
+  for (const k of ["gebouw", "code", "opmerking"]) it[k] = (it[k] || "").trim();
+  if (it.soort === "gas") for (const p of GAS_PARTS) it.onderdelen[p.key] = it.onderdelen[p.key].map((e) => ({ lokaal: (e.lokaal || "").trim(), verdiep: (e.verdiep || "").trim(), opmerking: (e.opmerking || "").trim(), foto: e.foto || "" })).filter((e) => e.lokaal || e.verdiep || e.opmerking || e.foto);
+  return it;
+}
+
+async function saveEdit() {
+  if (edit.busy) { toast("Even wachten tot de foto opgeladen is."); return; }
+  const it = cleaned(edit.item);
+  if (!it.gebouw && !it.code) { toast("Vul minstens een gebouw of nummer in."); $("#f-gebouw")?.focus(); return; }
+  const btn = $("#editForm [data-save]"); btn.disabled = true; btn.textContent = "Opslaan…";
+  try {
+    await Store.save(it);
+    const keep = new Set(photoRefs(it));
+    for (const r of new Set([...edit.originalRefs, ...edit.newRefs])) if (!keep.has(r)) await Store.deletePhoto(r);
+    edit = null; $("#editor").close(); toast("Opgeslagen");
+    if (Store.mode === "local") render();
+  } catch (e) { console.error(e); toast("Opslaan mislukt: " + (e.message || e.code || "onbekende fout")); btn.disabled = false; btn.textContent = "Opslaan"; }
+}
+
+async function cancelEdit() {
+  if (!edit) return;
+  const orphans = [...edit.newRefs];
+  edit = null; $("#editor").close();
+  for (const r of orphans) await Store.deletePhoto(r);
+}
+
+async function deleteItem(btn) {
+  if (!btn.classList.contains("armed")) { btn.classList.add("armed"); btn.textContent = "Klik nogmaals om te verwijderen"; setTimeout(() => { if (btn.isConnected) { btn.classList.remove("armed"); btn.textContent = "Verwijderen"; } }, 4000); return; }
+  const id = edit.item.id; const refs = new Set([...edit.originalRefs, ...edit.newRefs]);
+  try { await Store.remove(id); for (const r of refs) await Store.deletePhoto(r); edit = null; $("#editor").close(); toast("Verwijderd"); }
+  catch (e) { toast("Verwijderen mislukt: " + (e.message || e.code)); }
+}
+
+async function onPhoto(input) {
+  const file = input.files && input.files[0]; if (!file) return;
+  const path = input.dataset.photo;
+  const wrap = input.closest(".photo");
+  const acts = wrap.querySelector(".acts");
+  const note = document.createElement("span"); note.className = "busy"; note.textContent = "Foto verwerken…"; acts.append(note);
+  edit.busy++;
+  const session = edit;
+  try {
+    const blob = await shrink(file);
+    note.textContent = Store.mode === "shared" ? "Foto opladen…" : "Foto bewaren…";
+    const ref = await Store.uploadPhoto(blob);
+    await Store.cacheLocalBlob(ref, blob);
+    if (edit !== session) { await Store.deletePhoto(ref); return; }
+    edit.newRefs.add(ref);
+    setPath(edit.item, path, ref);
+    drawEditor();
+  } catch (e) {
+    console.error(e); note.textContent = ""; toast("Foto niet opgeslagen: " + (e.message || e.code || "onbekende fout"));
+  } finally { session.busy--; input.value = ""; note.remove(); }
+}
+
+/* ---------- Excel-export ---------- */
+let excelLib = null;
+function loadExcel() {
+  if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+  if (excelLib) return excelLib;
+  excelLib = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js";
+    s.onload = () => res(window.ExcelJS); s.onerror = () => { excelLib = null; rej(new Error("Excel-bibliotheek kon niet laden. Controleer de internetverbinding.")); };
+    document.head.append(s);
+  });
+  return excelLib;
+}
+
+async function thumbB64(ref) {
+  try {
+    const blob = await Store.photoBlob(ref); if (!blob) return null;
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const W = 320, H = 240; const c = document.createElement("canvas"); c.width = W; c.height = H;
+      const s = Math.max(W / img.naturalWidth, H / img.naturalHeight); const w = img.naturalWidth * s, h = img.naturalHeight * s;
+      c.getContext("2d").drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+      return c.toDataURL("image/jpeg", 0.78);
+    } finally { URL.revokeObjectURL(url); }
+  } catch { return null; }
+}
+
+function styleSheet(ws, color) {
+  const head = ws.getRow(1);
+  head.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  head.fill = { type: "pattern", pattern: "solid", fgColor: { argb: color } };
+  head.alignment = { vertical: "middle" }; head.height = 22;
+  ws.views = [{ state: "frozen", ySplit: 1 }];
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: ws.columnCount } };
+}
+
+async function doExport() {
+  const status = $("#exStatus"); const btn = $("#btnDoExport");
+  const wantRook = $("#exRook").checked, wantGas = $("#exGas").checked, fotos = $("#exFotos").checked, geb = $("#exGebouw").value;
+  if (!wantRook && !wantGas) { status.textContent = "Kies minstens één tabblad."; return; }
+  btn.disabled = true;
+  try {
+    status.textContent = "Excel-bibliotheek laden…";
+    const ExcelJS = await loadExcel();
+    const wb = new ExcelJS.Workbook(); wb.creator = "Inventaris rookkoepels en gas"; wb.created = new Date();
+    const pick = (soort) => sortItems(Store.items.filter((i) => i.soort === soort && (!geb || i.gebouw === geb)));
+    const PH = 95; // rijhoogte in punten bij foto's
+    let n = 0; const totalPhotos = (wantRook ? pick("rookkoepel").flatMap(photoRefs).length : 0) + (wantGas ? pick("gas").flatMap(photoRefs).length : 0);
+    const put = async (ws, ref, col, row) => {
+      if (!fotos || !ref) return;
+      n++; status.textContent = `Foto's toevoegen… ${n} / ${totalPhotos}`;
+      const b64 = await thumbB64(ref); if (!b64) return;
+      const id = wb.addImage({ base64: b64, extension: "jpeg" });
+      ws.addImage(id, { tl: { col: col - 1 + 0.08, row: row - 1 + 0.08 }, ext: { width: 160, height: 120 } });
+    };
+
+    if (wantRook) {
+      const ws = wb.addWorksheet("Rookkoepels");
+      ws.columns = [
+        { header: "Gebouw", key: "gebouw", width: 22 }, { header: "Nummer", key: "code", width: 12 },
+        { header: "Koepel – gang", key: "kg", width: 22 }, { header: "Koepel – verdiep", key: "kv", width: 14 }, { header: "Foto koepel", key: "kf", width: fotos ? 24 : 12 },
+        { header: "Bediening – lokaal", key: "bl", width: 22 }, { header: "Bediening – verdiep", key: "bv", width: 16 }, { header: "Foto bediening", key: "bf", width: fotos ? 24 : 12 },
+        { header: "Opmerking", key: "opm", width: 34 }, { header: "Status", key: "st", width: 14 }, { header: "Laatst gewijzigd", key: "gw", width: 16 },
+      ];
+      let r = 2;
+      for (const it of pick("rookkoepel")) {
+        const row = ws.addRow({ gebouw: it.gebouw, code: it.code, kg: it.koepel?.gang, kv: it.koepel?.verdiep, kf: it.koepel?.foto ? (fotos ? "" : "ja") : "geen", bl: it.bediening?.lokaal, bv: it.bediening?.verdiep, bf: it.bediening?.foto ? (fotos ? "" : "ja") : "geen", opm: it.opmerking, st: rookDone(it) ? "Volledig" : "Aan te vullen", gw: it.gewijzigd ? new Date(it.gewijzigd) : null });
+        row.alignment = { vertical: "top", wrapText: true };
+        if (fotos) row.height = PH;
+        await put(ws, it.koepel?.foto, 5, r); await put(ws, it.bediening?.foto, 8, r);
+        r++;
+      }
+      ws.getColumn("gw").numFmt = "dd/mm/yyyy";
+      styleSheet(ws, "FFC8321F");
+    }
+    if (wantGas) {
+      const ws = wb.addWorksheet("Gasinstallaties");
+      ws.columns = [
+        { header: "Gebouw", key: "gebouw", width: 22 }, { header: "Installatie", key: "code", width: 14 }, { header: "Onderdeel", key: "ond", width: 16 }, { header: "Nr", key: "nr", width: 5 },
+        { header: "Lokaal / plaats", key: "lok", width: 22 }, { header: "Verdiep", key: "ver", width: 10 }, { header: "Foto", key: "foto", width: fotos ? 24 : 10 },
+        { header: "Opmerking", key: "opm", width: 34 }, { header: "Laatst gewijzigd", key: "gw", width: 16 },
+      ];
+      let r = 2;
+      for (const it of pick("gas")) {
+        for (const p of GAS_PARTS) {
+          const list = it.onderdelen?.[p.key] || [];
+          if (!list.length) { const row = ws.addRow({ gebouw: it.gebouw, code: it.code, ond: p.label, nr: "", lok: "niet geregistreerd", gw: it.gewijzigd ? new Date(it.gewijzigd) : null }); row.font = { italic: true, color: { argb: "FF8A6200" } }; r++; continue; }
+          for (let i = 0; i < list.length; i++) {
+            const e = list[i];
+            const row = ws.addRow({ gebouw: it.gebouw, code: it.code, ond: p.label, nr: i + 1, lok: e.lokaal, ver: e.verdiep, foto: e.foto ? (fotos ? "" : "ja") : "geen", opm: [e.opmerking, i === 0 && p.key === "gasinstallatie" ? it.opmerking : ""].filter(Boolean).join(" — "), gw: it.gewijzigd ? new Date(it.gewijzigd) : null });
+            row.alignment = { vertical: "top", wrapText: true };
+            if (fotos && e.foto) row.height = PH;
+            await put(ws, e.foto, 7, r);
+            r++;
+          }
+        }
+      }
+      ws.getColumn("gw").numFmt = "dd/mm/yyyy";
+      styleSheet(ws, "FFB57800");
+    }
+
+    status.textContent = "Bestand opbouwen…";
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const d = new Date(); const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const filename = `inventaris-rookkoepels-gas${geb ? "-" + geb.replace(/[^\w-]+/g, "_") : ""}-${stamp}.xlsx`;
+    await saveFile(filename, blob);
+    status.textContent = "Klaar. Het Excel-bestand is aangeboden om op te slaan.";
+  } catch (e) {
+    console.error(e);
+    status.textContent = e && e.code === "declined" ? "Opslaan geannuleerd." : "Export mislukt: " + (e.message || e.code || "onbekende fout");
+  } finally { btn.disabled = false; }
+}
+
+async function saveFile(filename, blob) {
+  if (Store.downloads) { await Store.downloads.save({ filename, data: blob }); return; }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+
+/* ---------- Gebeurtenissen ---------- */
+document.addEventListener("click", (ev) => {
+  const t = ev.target.closest("button, [data-id]"); if (!t) return;
+  if (t.matches(".tab")) { state.tab = t.dataset.tab; try { localStorage.setItem("inv-tab", state.tab); } catch {} render(); return; }
+  if (t.id === "btnNew" || t.matches("[data-new]")) { openEditor(null); return; }
+  if (t.id === "btnExport") { $("#exStatus").textContent = ""; $("#exportDlg").showModal(); return; }
+  if (t.id === "btnDoExport") { doExport(); return; }
+  if (t.matches(".card[data-id]")) { const it = Store.items.find((i) => i.id === t.dataset.id); if (it) openEditor(it); return; }
+  if (!edit) return;
+  if (t.matches("[data-cancel]")) { cancelEdit(); return; }
+  if (t.matches("[data-save]")) { saveEdit(); return; }
+  if (t.matches("[data-delete]")) { deleteItem(t); return; }
+  if (t.matches("[data-clear-photo]")) { setPath(edit.item, t.dataset.clearPhoto, ""); drawEditor(); return; }
+  if (t.matches("[data-add-entry]")) { edit.item.onderdelen[t.dataset.addEntry].push(blankGasEntry()); drawEditor(); return; }
+  if (t.matches("[data-remove-entry]")) { const [k, i] = t.dataset.removeEntry.split("."); edit.item.onderdelen[k].splice(+i, 1); drawEditor(); return; }
+});
+document.addEventListener("input", (ev) => {
+  const t = ev.target;
+  if (t.id === "q") { state.q = t.value.trim(); render(); return; }
+  if (edit && t.dataset.path && t.closest("#editForm")) setPath(edit.item, t.dataset.path, t.value);
+});
+document.addEventListener("change", (ev) => {
+  const t = ev.target;
+  if (t.id === "fGebouw") { state.gebouw = t.value; render(); return; }
+  if (t.matches("input[type=file][data-photo]")) onPhoto(t);
+});
+$("#editor").addEventListener("cancel", (ev) => { ev.preventDefault(); cancelEdit(); });
+
+/* ---------- Start ---------- */
+Store.onChange = render;
+render();
+Store.init().then(() => {
+  if (Store.mode === "shared") setMode(Store.assets ? "Gedeeld opgeslagen" : "Gedeeld · alleen lezen voor foto's", "shared");
+  else setMode(Store.idb ? "Alleen op dit toestel" : "Niet opgeslagen (privévenster?)", "local");
+  render();
+});
+})();
+</script>
+</body>
+</html>
