@@ -421,16 +421,20 @@ function loadExcel() {
   });
 }
 
+// Volledige foto (niets afgesneden), passend in een vak van BOX x BOX pixels.
+// Aan dubbele resolutie getekend, zodat ze scherp blijft als je in Excel inzoomt.
+const BOX = 200;
 async function thumbB64(ref) {
   try {
     const blob = await Store.photoBlob(ref); if (!blob) return null;
     const url = URL.createObjectURL(blob);
     try {
       const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
-      const W = 320, H = 240; const c = document.createElement("canvas"); c.width = W; c.height = H;
-      const s = Math.max(W / img.naturalWidth, H / img.naturalHeight); const w = img.naturalWidth * s, h = img.naturalHeight * s;
-      c.getContext("2d").drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
-      return c.toDataURL("image/jpeg", 0.78);
+      const s = Math.min(BOX / img.naturalWidth, BOX / img.naturalHeight);
+      const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
+      const c = document.createElement("canvas"); c.width = w * 2; c.height = h * 2;
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      return { b64: c.toDataURL("image/jpeg", 0.85), w, h };
     } finally { URL.revokeObjectURL(url); }
   } catch { return null; }
 }
@@ -454,14 +458,15 @@ async function doExport() {
     const ExcelJS = await loadExcel();
     const wb = new ExcelJS.Workbook(); wb.creator = "Rookgas"; wb.created = new Date();
     const pick = (soort) => sortItems(Store.items.filter((i) => i.soort === soort && (!geb || i.gebouw === geb)));
-    const PH = 95;
+    const PH = Math.ceil((BOX + 12) * 0.75); // rijhoogte in punten (1 pt = 4/3 px)
+    const PW = 31; // kolombreedte voor foto's, ruim BOX pixels
     let n = 0; const totalPhotos = (wantRook ? pick("rookkoepel").flatMap(photoRefs).length : 0) + (wantGas ? pick("gas").flatMap(photoRefs).length : 0);
     const put = async (ws, ref, col, row) => {
       if (!fotos || !ref) return;
       n++; status.textContent = `Foto's toevoegen… ${n} / ${totalPhotos}`;
-      const b64 = await thumbB64(ref); if (!b64) return;
-      const id = wb.addImage({ base64: b64, extension: "jpeg" });
-      ws.addImage(id, { tl: { col: col - 1 + 0.08, row: row - 1 + 0.08 }, ext: { width: 160, height: 120 } });
+      const t = await thumbB64(ref); if (!t) return;
+      const id = wb.addImage({ base64: t.b64, extension: "jpeg" });
+      ws.addImage(id, { tl: { col: col - 1 + 0.03, row: row - 1 + 0.03 }, ext: { width: t.w, height: t.h }, editAs: "oneCell" });
     };
     const datum = (iso) => (iso ? new Date(iso) : null);
 
@@ -469,8 +474,8 @@ async function doExport() {
       const ws = wb.addWorksheet("Rookkoepels");
       ws.columns = [
         { header: "Gebouw", key: "gebouw", width: 22 }, { header: "Nummer", key: "code", width: 12 },
-        { header: "Koepel – gang", key: "kg", width: 22 }, { header: "Koepel – verdiep", key: "kv", width: 14 }, { header: "Foto koepel", key: "kf", width: fotos ? 24 : 12 },
-        { header: "Bediening – lokaal", key: "bl", width: 22 }, { header: "Bediening – verdiep", key: "bv", width: 16 }, { header: "Foto bediening", key: "bf", width: fotos ? 24 : 12 },
+        { header: "Koepel – gang", key: "kg", width: 22 }, { header: "Koepel – verdiep", key: "kv", width: 14 }, { header: "Foto koepel", key: "kf", width: fotos ? PW : 12 },
+        { header: "Bediening – lokaal", key: "bl", width: 22 }, { header: "Bediening – verdiep", key: "bv", width: 16 }, { header: "Foto bediening", key: "bf", width: fotos ? PW : 12 },
         { header: "Opmerking", key: "opm", width: 34 }, { header: "Status", key: "st", width: 14 }, { header: "Laatst gewijzigd", key: "gw", width: 16 },
       ];
       let r = 2;
@@ -488,7 +493,7 @@ async function doExport() {
       const ws = wb.addWorksheet("Gasinstallaties");
       ws.columns = [
         { header: "Gebouw", key: "gebouw", width: 22 }, { header: "Installatie", key: "code", width: 14 }, { header: "Onderdeel", key: "ond", width: 16 }, { header: "Nr", key: "nr", width: 5 },
-        { header: "Lokaal / plaats", key: "lok", width: 22 }, { header: "Verdiep", key: "ver", width: 10 }, { header: "Foto", key: "foto", width: fotos ? 24 : 10 },
+        { header: "Lokaal / plaats", key: "lok", width: 22 }, { header: "Verdiep", key: "ver", width: 10 }, { header: "Foto", key: "foto", width: fotos ? PW : 10 },
         { header: "Opmerking", key: "opm", width: 34 }, { header: "Laatst gewijzigd", key: "gw", width: 16 },
       ];
       let r = 2;
@@ -541,8 +546,11 @@ async function doInstall() {
 
 /* ---------- Gebeurtenissen ---------- */
 document.addEventListener("click", (ev) => {
+  const z = ev.target.closest(".photo img.thumb[src]");
+  if (z) { $("#zoomImg").src = z.src; $("#zoomImg").alt = z.alt; $("#zoomDlg").showModal(); return; }
   const t = ev.target.closest("button, [data-id]"); if (!t) return;
   if (t.id === "btnInstall") { doInstall(); return; }
+  if (t.id === "btnZoomClose") { $("#zoomDlg").close(); return; }
   if (t.id === "btnLogout") { sb.auth.signOut(); return; }
   if (t.matches(".tab")) { state.tab = t.dataset.tab; try { localStorage.setItem("rookgas-tab", state.tab); } catch {} render(); return; }
   if (t.id === "btnNew" || t.matches("[data-new]")) { openEditor(null); return; }
