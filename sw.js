@@ -1,6 +1,6 @@
 // Service worker: maakt de app installeerbaar, laat ze openen zonder verbinding (bv. in een stookplaats in de kelder)
 // en houdt foto's bij die al eens getoond werden, zodat je ze ook zonder bereik ziet. Eigen bestanden: altijd eerst de nieuwste versie.
-const APP = "rookgas-app-v3", FOTOS = "rookgas-fotos-v1";
+const APP = "rookgas-app-v4", FOTOS = "rookgas-fotos-v1";
 const BESTANDEN = ["./", "index.html", "app.js", "config.js", "manifest.webmanifest",
   "vendor/supabase-2.116.0.js", "vendor/exceljs-4.4.0.min.js",
   "fonts/barlow-condensed-latin-600-normal.woff2", "fonts/barlow-condensed-latin-700-normal.woff2",
