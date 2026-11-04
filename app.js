@@ -285,12 +285,15 @@ function distinct(fn) { const s = new Set(); for (const it of Store.items) for (
 function allEntries(it) { const out = []; for (const p of GAS_PARTS) for (const e of it.onderdelen?.[p.key] || []) out.push(e); return out; }
 
 function rookDone(it) { return !!(it.koepel?.foto && it.bediening?.foto && (it.koepel?.gang || it.koepel?.verdiep) && (it.bediening?.lokaal || it.bediening?.verdiep)); }
+// "Niet aanwezig" aangevinkt telt als afgewerkt. Bewaard in onderdelen.niet_aanwezig: { noodknop: true, ... }.
+const afwezig = (it, key) => !!it.onderdelen?.niet_aanwezig?.[key];
 function partState(it, key) {
+  if (afwezig(it, key)) return "na";
   const list = it.onderdelen?.[key] || [];
   if (!list.length) return "none";
   return list.every((e) => e.foto && (e.lokaal || e.verdiep)) ? "ok" : "half";
 }
-function gasDone(it) { return GAS_PARTS.every((p) => partState(it, p.key) === "ok"); }
+function gasDone(it) { return GAS_PARTS.every((p) => ["ok", "na"].includes(partState(it, p.key))); }
 
 /* ---------- Weergave ---------- */
 function thumb(ref, alt) {
@@ -370,6 +373,7 @@ function gasCard(it) {
   const ok = gasDone(it);
   const chips = GAS_PARTS.map((p) => {
     const st = partState(it, p.key); const n = (it.onderdelen?.[p.key] || []).length;
+    if (st === "na") return `<span class="chip na">✓ ${esc(p.label)}: niet aanwezig</span>`;
     const mark = st === "ok" ? "✓" : st === "half" ? "…" : "–";
     return `<span class="chip ${st === "ok" ? "ok" : st === "half" ? "half" : ""}">${mark} ${esc(p.label)}${n > 1 ? " ×" + n : ""}</span>`;
   }).join("");
@@ -403,7 +407,7 @@ function openEditor(item) {
       ? { id: uid(), soort: "rookkoepel", gebouw: g, code: nextCode("RK-", "rookkoepel"), koepel: { gang: "", verdiep: "", foto: "" }, bediening: { lokaal: "", verdiep: "", foto: "" }, opmerking: "" }
       : { id: uid(), soort: "gas", gebouw: g, code: nextCode("GAS-", "gas"), onderdelen: Object.fromEntries(GAS_PARTS.map((p) => [p.key, [blankGasEntry()]])), opmerking: "" };
   } else item = JSON.parse(JSON.stringify(item));
-  if (item.soort === "gas") { item.onderdelen = item.onderdelen || {}; for (const p of GAS_PARTS) if (!Array.isArray(item.onderdelen[p.key])) item.onderdelen[p.key] = []; }
+  if (item.soort === "gas") { item.onderdelen = item.onderdelen || {}; item.onderdelen.niet_aanwezig = { ...(item.onderdelen.niet_aanwezig || {}) }; for (const p of GAS_PARTS) if (!Array.isArray(item.onderdelen[p.key])) item.onderdelen[p.key] = []; }
   edit = { item, isNew, originalRefs: new Set(photoRefs(item)), newRefs: new Set(), busy: 0 };
   drawEditor();
   $("#editor").showModal();
@@ -451,8 +455,16 @@ function drawEditor() {
   } else {
     for (const p of GAS_PARTS) {
       const list = it.onderdelen[p.key];
-      body += `<fieldset class="gasf"><legend>${esc(p.label)}</legend>`;
-      if (!list.length) body += `<p class="hint">Niet aanwezig of nog niet geregistreerd.</p>`;
+      const na = afwezig(it, p.key);
+      body += `<fieldset class="gasf"><legend>${esc(p.label)}</legend>
+        <label class="check na-check"><input type="checkbox" data-afwezig="${p.key}" ${na ? "checked" : ""}> Niet aanwezig</label>`;
+      if (na) {
+        if (list.some((e) => e.lokaal || e.verdiep || e.opmerking || e.foto || e.foto2 || e.serienummer || e.vermogen))
+          body += `<p class="hint">Wat hier al ingevuld was, wordt bij het opslaan verwijderd. Haal het vinkje weg om het te houden.</p>`;
+        body += `</fieldset>`;
+        continue;
+      }
+      if (!list.length) body += `<p class="hint">Nog niets geregistreerd.</p>`;
       list.forEach((e, i) => {
         const base = `onderdelen.${p.key}.${i}`;
         body += `<div class="entry">
@@ -470,7 +482,6 @@ function drawEditor() {
             ? `<span class="lbl">Foto van de ketel</span>${photoField(base + ".foto", e.foto, "Foto ketel")}
                <span class="lbl">Foto van het typeplaatje <em>(indien mogelijk)</em></span>${photoField(base + ".foto2", e.foto2, "Foto typeplaatje")}`
             : photoField(base + ".foto", e.foto, "Foto " + p.one)}
-          ${list.length === 1 && i === 0 ? `<div><button class="btn small danger" type="button" data-remove-entry="${p.key}.${i}">Niet aanwezig</button></div>` : ""}
         </div>`;
       });
       body += `<div><button class="btn small" type="button" data-add-entry="${p.key}">+ ${esc(list.length ? p.more : "Toevoegen")}</button></div></fieldset>`;
@@ -499,6 +510,9 @@ function cleaned(item) {
     for (const k of ["gang", "verdiep"]) it.koepel[k] = (it.koepel[k] || "").trim();
     for (const k of ["lokaal", "verdiep"]) it.bediening[k] = (it.bediening[k] || "").trim();
   } else {
+    // Niet aanwezig: ingevulde gegevens van dat onderdeel vallen weg (foto's worden daarna opgeruimd).
+    const na = {}; for (const p of GAS_PARTS) if (afwezig(it, p.key)) { na[p.key] = true; it.onderdelen[p.key] = []; }
+    it.onderdelen.niet_aanwezig = na;
     for (const p of GAS_PARTS) it.onderdelen[p.key] = it.onderdelen[p.key].map((e) => {
       const out = { lokaal: (e.lokaal || "").trim(), verdiep: (e.verdiep || "").trim(), opmerking: (e.opmerking || "").trim(), foto: e.foto || "" };
       if (p.key === "ketels") { out.serienummer = (e.serienummer || "").trim(); out.vermogen = (e.vermogen || "").trim(); out.foto2 = e.foto2 || ""; }
@@ -653,6 +667,7 @@ async function doExport() {
       for (const it of pick("gas")) {
         for (const p of GAS_PARTS) {
           const list = it.onderdelen?.[p.key] || [];
+          if (afwezig(it, p.key)) { const row = ws.addRow({ gebouw: it.gebouw, code: it.code, ond: p.label, nr: "", lok: "niet aanwezig", gw: datum(it.gewijzigd) }); row.font = { italic: true, color: { argb: "FF5B6875" } }; r++; continue; }
           if (!list.length) { const row = ws.addRow({ gebouw: it.gebouw, code: it.code, ond: p.label, nr: "", lok: "niet geregistreerd", gw: datum(it.gewijzigd) }); row.font = { italic: true, color: { argb: "FF8A6200" } }; r++; continue; }
           for (let i = 0; i < list.length; i++) {
             const e = list[i];
@@ -730,6 +745,12 @@ document.addEventListener("change", (ev) => {
   const t = ev.target;
   if (t.id === "fGebouw") { state.gebouw = t.value; render(); return; }
   if (t.matches("input[type=file][data-photo]")) onPhoto(t);
+  if (edit && t.matches("input[data-afwezig]")) {
+    const k = t.dataset.afwezig;
+    edit.item.onderdelen.niet_aanwezig[k] = t.checked;
+    if (!t.checked && !edit.item.onderdelen[k].length) edit.item.onderdelen[k].push(blankGasEntry());
+    drawEditor();
+  }
 });
 $("#editor").addEventListener("cancel", (ev) => { ev.preventDefault(); cancelEdit(); });
 $("#loginForm").addEventListener("submit", async (ev) => {
