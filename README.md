@@ -15,6 +15,7 @@ met een link die ze per e-mail krijgen; wie in de toegangslijst van de veilighei
 **Gasinstallaties** (gebouw en naam, automatisch GAS-01, …): gasinstallatie, ketels, noodknop, gasklep en gasdetectie.
 Per onderdeel lokaal/plaats, verdiep, opmerking en foto. Van elk onderdeel kunnen er meerdere zijn.
 Bij ketels ook serienummer, vermogen (kW) en een tweede foto van het typeplaatje (optioneel).
+Is een onderdeel er niet, vink dan **Niet aanwezig** aan; een installatie is *Volledig* als elk onderdeel ingevuld (met foto) of als niet aanwezig aangevinkt is.
 
 **Excel-export**: tabbladen *Rookkoepels* en *Gasinstallaties*, met filters en optioneel de foto's als miniatuur in de cellen,
 voor alle gebouwen of voor één gebouw.
