@@ -536,6 +536,9 @@ async function deleteItem(btn) {
 }
 
 async function onPhoto(input) {
+  // Sommige gsm's scrollen na het kiezen van een bestand het venster of het paneel weg: zet alles terug.
+  const body = $("#editForm .sheet-body"); const keep = body ? body.scrollTop : 0;
+  input.blur(); window.scrollTo(0, 0); $("#editor").scrollTop = 0; if (body) body.scrollTop = keep;
   const file = input.files && input.files[0]; if (!file) return;
   const path = input.dataset.photo;
   const acts = input.closest(".photo").querySelector(".acts");
