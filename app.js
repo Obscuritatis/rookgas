@@ -536,6 +536,9 @@ async function deleteItem(btn) {
 }
 
 async function onPhoto(input) {
+  // Sommige gsm's scrollen na het kiezen van een bestand het venster of het paneel weg: zet alles terug.
+  const body = $("#editForm .sheet-body"); const keep = body ? body.scrollTop : 0;
+  input.blur(); window.scrollTo(0, 0); $("#editor").scrollTop = 0; if (body) body.scrollTop = keep;
   const file = input.files && input.files[0]; if (!file) return;
   const path = input.dataset.photo;
   const acts = input.closest(".photo").querySelector(".acts");
@@ -567,7 +570,6 @@ function loadExcel() {
 }
 
 // Volledige foto (niets afgesneden), passend in een vak van BOX x BOX pixels.
-// Aan dubbele resolutie getekend, zodat ze scherp blijft als je in Excel inzoomt.
 const BOX = 200;
 async function thumbB64(ref) {
   try {
@@ -577,9 +579,13 @@ async function thumbB64(ref) {
       const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
       const s = Math.min(BOX / img.naturalWidth, BOX / img.naturalHeight);
       const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
-      const c = document.createElement("canvas"); c.width = w * 2; c.height = h * 2;
-      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-      return { b64: c.toDataURL("image/jpeg", 0.85), w, h };
+      // Ingesloten op hoge resolutie (lange zijde max. 1200 px), zodat de foto scherp blijft als je
+      // in Excel inzoomt of ze groter sleept; getoond wordt ze in een vak van BOX pixels.
+      const k = Math.min(1, 1200 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      const ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      return { b64: c.toDataURL("image/jpeg", 0.88), w, h };
     } finally { URL.revokeObjectURL(url); }
   } catch { return null; }
 }
@@ -769,7 +775,21 @@ function fetchMetLimiet(url, opts = {}) {
   return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t));
 }
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch((e) => console.error(e));
+// Nieuwe versie van de app: bij elke terugkeer naar de app nakijken, en dan vanzelf herladen
+// (niet terwijl een fiche openstaat; dan wacht het tot die dicht is).
+if ("serviceWorker" in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  let herladen = false;
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => {}); });
+  }).catch((e) => console.error(e));
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || herladen) return;
+    herladen = true;
+    const probeer = () => { if (!edit && !$("#exportDlg").open) location.reload(); else setTimeout(probeer, 2000); };
+    probeer();
+  });
+}
 showInstall();
 render();
 (async () => {
