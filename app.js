@@ -570,7 +570,6 @@ function loadExcel() {
 }
 
 // Volledige foto (niets afgesneden), passend in een vak van BOX x BOX pixels.
-// Aan dubbele resolutie getekend, zodat ze scherp blijft als je in Excel inzoomt.
 const BOX = 200;
 async function thumbB64(ref) {
   try {
@@ -580,9 +579,13 @@ async function thumbB64(ref) {
       const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
       const s = Math.min(BOX / img.naturalWidth, BOX / img.naturalHeight);
       const w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
-      const c = document.createElement("canvas"); c.width = w * 2; c.height = h * 2;
-      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-      return { b64: c.toDataURL("image/jpeg", 0.85), w, h };
+      // Ingesloten op hoge resolutie (lange zijde max. 1200 px), zodat de foto scherp blijft als je
+      // in Excel inzoomt of ze groter sleept; getoond wordt ze in een vak van BOX pixels.
+      const k = Math.min(1, 1200 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      const ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      return { b64: c.toDataURL("image/jpeg", 0.88), w, h };
     } finally { URL.revokeObjectURL(url); }
   } catch { return null; }
 }
