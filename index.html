@@ -194,6 +194,8 @@ body { margin: 0; }
 .login p { margin: 0; color: var(--muted); }
 input[type="email"] { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); min-height: 44px; }
 .banner { background: var(--gas-soft); color: var(--warn); border-radius: 8px; padding: 10px 14px; font-weight: 600; margin-top: 12px; }
+.sync { font-size: .8rem; font-weight: 600; padding: 4px 10px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
+.sync.wacht { background: var(--gas-soft); color: var(--warn); }
 .steps { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 8px; }
 </style>
 </head>
@@ -211,6 +213,7 @@ input[type="email"] { width: 100%; padding: 10px 12px; border: 1px solid var(--l
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3"/></svg>
           Excel-export
         </button>
+        <span class="sync" id="sync" role="status" hidden></span>
         <span class="who" id="who" hidden><span id="whoMail"></span><button class="linkbtn" type="button" id="btnLogout">Afmelden</button></span>
       </div>
     </div>

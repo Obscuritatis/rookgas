@@ -53,66 +53,199 @@ function toGas(it) {
   return { id: it.id, gebouw: it.gebouw, code: it.code, opmerking: it.opmerking, onderdelen: it.onderdelen, gewijzigd: new Date().toISOString() };
 }
 
+/* ---------- Opslag met wachtrij (offline werken) ----------
+   Elke wijziging (fiche, foto, verwijderen) gaat eerst naar een wachtrij op dit toestel (IndexedDB, met de
+   foto's erbij) en wordt verstuurd zodra er verbinding is. Zo kan je ook registreren in een kelder zonder bereik.
+   De laatst geladen gegevens worden bewaard, zodat de app zonder verbinding meteen je lijst toont. */
+const CACHE_KEY = "rookgas-gegevens";
+const raw = { [T_ROOK]: [], [T_GAS]: [] };   // zoals laatst geladen uit Supabase
+let wachtrij = [];          // [{k, actie: upsert|delete|foto|wis, tabel, rij|id|pad|blob|paden}]
+let versturen = null, geenVerbinding = false, laatsteFout = null, laatsteK = 0;
+
+const netwerkFout = (e) => !navigator.onLine || !e || e.status === 0 || /fetch|network|load failed|timeout|abort/i.test(String(e.message || e));
+// Fouten die bij een nieuwe poging niet weggaan (geen toegang, ongeldige gegevens): die wijziging valt weg.
+const blijvendeFout = (e) => e && !netwerkFout(e) && (/^(42501|22|23|PGRST)/.test(String(e.code || "")) || /^(400|403|413)$/.test(String(e.statusCode || "")));
+
+function idb(modus, fn) {
+  return new Promise((ok, nok) => {
+    const open = indexedDB.open("rookgas", 1);
+    open.onupgradeneeded = () => open.result.createObjectStore("wachtrij", { keyPath: "k" });
+    open.onerror = () => nok(open.error);
+    open.onsuccess = () => {
+      const db = open.result, tx = db.transaction("wachtrij", modus), req = fn(tx.objectStore("wachtrij"));
+      tx.oncomplete = () => { db.close(); ok(req && req.result); };
+      tx.onerror = () => { db.close(); nok(tx.error); };
+    };
+  });
+}
+
 const Store = {
   items: [], loaded: false,
 
+  // Gegevens zoals laatst geladen + wat nog in de wachtrij staat.
+  herbereken() {
+    const d = { [T_ROOK]: raw[T_ROOK].slice(), [T_GAS]: raw[T_GAS].slice() };
+    for (const it of wachtrij) {
+      const t = d[it.tabel]; if (!t) continue;
+      if (it.actie === "upsert") { const i = t.findIndex((x) => x.id === it.rij.id); if (i >= 0) t[i] = { ...t[i], ...it.rij }; else t.push(it.rij); }
+      else if (it.actie === "delete") d[it.tabel] = t.filter((x) => x.id !== it.id);
+    }
+    this.items = d[T_ROOK].map(fromRook).concat(d[T_GAS].map(fromGas));
+  },
+
   async loadAll() {
-    const [a, b] = await Promise.all([sb.from(T_ROOK).select("*"), sb.from(T_GAS).select("*")]);
-    if (a.error || b.error) { banner("Gegevens laden mislukt: " + errText(a.error || b.error)); return; }
-    banner("");
-    this.items = a.data.map(fromRook).concat(b.data.map(fromGas));
-    this.loaded = true;
+    const [a, b] = await Promise.all([selectAlles(T_ROOK), selectAlles(T_GAS)]);
+    const fout = a.error || b.error;
+    if (fout) {
+      // Geen verbinding: verder werken met wat op dit toestel bewaard is.
+      if (netwerkFout(fout)) {
+        geenVerbinding = true; zetSync();
+        if (!this.loaded) { this.loaded = true; this.herbereken(); renderSafe(); }
+        return;
+      }
+      banner("Gegevens laden mislukt: " + errText(fout)); return;
+    }
+    banner(""); geenVerbinding = false;
+    raw[T_ROOK] = a.data; raw[T_GAS] = b.data;
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ gebruiker: sessie && sessie.user && sessie.user.email, ...raw })); } catch (e) { console.warn(e); }
+    this.herbereken(); this.loaded = true; zetSync();
     renderSafe();
+  },
+
+  // Bij het opstarten: gegevens en wachtrij van de vorige keer.
+  async laadBewaard(s) {
+    try {
+      const c = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+      if (c && c.gebruiker === (s.user && s.user.email)) { raw[T_ROOK] = c[T_ROOK] || []; raw[T_GAS] = c[T_GAS] || []; this.loaded = true; }
+    } catch (e) { console.warn(e); }
+    try { wachtrij = ((await idb("readonly", (st) => st.getAll())) || []).sort((x, y) => x.k - y.k); } catch (e) { console.warn(e); }
+    laatsteK = Math.max(laatsteK, ...wachtrij.map((it) => it.k));
+    for (const it of wachtrij) if (it.actie === "foto" && !fotoUrls.has(it.pad)) fotoUrls.set(it.pad, URL.createObjectURL(it.blob));
+    this.herbereken(); zetSync(); render();
+  },
+
+  async wacht(items) {
+    items = items.map((it) => ({ ...it, k: (laatsteK = Math.max(Date.now(), laatsteK + 1)) }));
+    try { await idb("readwrite", (st) => { items.forEach((it) => st.put(it)); }); }
+    catch (e) { console.warn(e); }   // geen IndexedDB (bv. privévenster): de wachtrij staat enkel in het geheugen
+    wachtrij.push(...items);
+    this.herbereken(); render();
+    verstuur();
   },
 
   async save(it) {
     const isRook = it.soort === "rookkoepel";
-    const { error } = await sb.from(isRook ? T_ROOK : T_GAS).upsert(isRook ? toRook(it) : toGas(it));
-    if (error) throw error;
-    await this.loadAll();
+    await this.wacht([{ actie: "upsert", tabel: isRook ? T_ROOK : T_GAS, rij: isRook ? toRook(it) : toGas(it) }]);
   },
 
   async remove(it) {
-    const { error } = await sb.from(it.soort === "rookkoepel" ? T_ROOK : T_GAS).delete().eq("id", it.id);
-    if (error) throw error;
-    await this.loadAll();
+    await this.wacht([{ actie: "delete", tabel: it.soort === "rookkoepel" ? T_ROOK : T_GAS, id: it.id }]);
   },
 
   async uploadPhoto(blob, map) {
     const pad = `${map}/${uid()}.jpg`;
-    const { error } = await sb.storage.from(BUCKET).upload(pad, blob, { contentType: "image/jpeg", upsert: false });
-    if (error) throw error;
     fotoUrls.set(pad, URL.createObjectURL(blob));
+    await this.wacht([{ actie: "foto", pad, blob }]);
     return pad;
   },
 
   async deletePhotos(paden) {
     paden = paden.filter(Boolean); if (!paden.length) return;
-    paden.forEach((p) => fotoUrls.delete(p));
-    try { await sb.storage.from(BUCKET).remove(paden); } catch (e) { console.warn("Foto's niet verwijderd", e); }
+    const wis = [];
+    for (const pad of paden) {
+      fotoUrls.delete(pad);
+      // Nog niet verstuurd? Dan gewoon uit de wachtrij halen.
+      const i = wachtrij.findIndex((it) => it.actie === "foto" && it.pad === pad);
+      if (i > 0 || (i === 0 && !versturen)) {
+        const [it] = wachtrij.splice(i, 1);
+        await idb("readwrite", (st) => { st.delete(it.k); }).catch(() => {});
+      } else wis.push(pad);
+    }
+    if (wis.length) await this.wacht([{ actie: "wis", paden: wis }]);
+    else zetSync();
   },
 
   async photoBlob(pad) {
+    const lokaal = wachtrij.find((it) => it.actie === "foto" && it.pad === pad);
+    if (lokaal) return lokaal.blob;
     const { data, error } = await sb.storage.from(BUCKET).download(pad);
     return error ? null : data;
   },
 };
 
+// Supabase geeft max. 1000 rijen per keer terug; haal alles op in stukken.
+async function selectAlles(tabel) {
+  const uit = [];
+  for (let van = 0; ; van += 1000) {
+    const { data, error } = await sb.from(tabel).select("*").order("id").range(van, van + 999);
+    if (error) return { error };
+    uit.push(...data);
+    if (data.length < 1000) return { data: uit, error: null };
+  }
+}
+
+function voerUit(it) {
+  if (it.actie === "foto") return sb.storage.from(BUCKET).upload(it.pad, it.blob, { contentType: "image/jpeg", upsert: true });
+  if (it.actie === "wis") return sb.storage.from(BUCKET).remove(it.paden);
+  const q = sb.from(it.tabel);
+  if (it.actie === "upsert") return q.upsert(it.rij);
+  if (it.actie === "delete") return q.delete().eq("id", it.id);
+  return { error: null };
+}
+
+// Verstuurt de wachtrij in volgorde. Lukt het niet door de verbinding, dan blijft alles staan voor later.
+function verstuur() {
+  if (versturen || !sb || !sessie || !wachtrij.length) { zetSync(); return versturen; }
+  versturen = (async () => {
+    zetSync();
+    let fout = null;
+    while (wachtrij.length) {
+      const it = wachtrij[0];
+      let res;
+      try { res = await voerUit(it); } catch (e) { res = { error: e }; }
+      if (res && res.error) {
+        console.error(res.error);
+        if (!blijvendeFout(res.error)) { fout = res.error; break; }
+        toast("Een wijziging kon niet opgeslagen worden: " + errText(res.error));
+      }
+      if (wachtrij[0] === it) wachtrij.shift();
+      await idb("readwrite", (st) => { st.delete(it.k); }).catch(() => {});
+    }
+    versturen = null; laatsteFout = fout;
+    if (fout && netwerkFout(fout)) geenVerbinding = true;
+    zetSync();
+    if (!fout) await Store.loadAll();
+  })();
+  return versturen;
+}
+
+function zetSync() {
+  const el = $("#sync"); if (!el) return;
+  const n = wachtrij.length, offline = !navigator.onLine || geenVerbinding;
+  el.hidden = !sessie || (!n && !offline);
+  el.classList.toggle("wacht", n > 0);
+  const wat = n ? ` · ${n} ${n === 1 ? "wijziging wacht" : "wijzigingen wachten"}` : "";
+  el.textContent = offline ? `Offline${wat || " · je kan verder werken"}` : versturen ? `Versturen${wat}` : n ? `Nog niet verstuurd${wat}` : "";
+  el.title = laatsteFout && !offline ? String(laatsteFout.message || laatsteFout) : "";
+}
+
 /* ---------- Foto-adressen (tijdelijk ondertekend) ---------- */
 const fotoUrls = new Map();
 let fillBusy = null;
+// Zonder verbinding: de service worker geeft de foto uit zijn bewaarde kopie, als ze al eens getoond werd.
+const offlineUrl = (pad) => encodeURI(`${window.ROOKGAS_CONFIG.supabaseUrl}/storage/v1/object/sign/${BUCKET}/${pad}?offline=1`);
 async function fillPhotos() {
   const imgs = [...document.querySelectorAll("img[data-foto]")];
   const todo = [...new Set(imgs.map((i) => i.dataset.foto).filter((p) => !fotoUrls.has(p)))];
-  if (todo.length) {
+  if (todo.length && sb) {
     try {
       const { data } = await sb.storage.from(BUCKET).createSignedUrls(todo, 60 * 60 * 12);
       for (const d of data || []) if (d.signedUrl) fotoUrls.set(d.path, d.signedUrl);
     } catch (e) { console.warn(e); }
   }
   for (const img of document.querySelectorAll("img[data-foto]")) {
-    const u = fotoUrls.get(img.dataset.foto);
-    if (u && img.getAttribute("src") !== u) img.src = u;
+    const u = fotoUrls.get(img.dataset.foto) || offlineUrl(img.dataset.foto);
+    if (img.getAttribute("src") !== u) img.src = u;
   }
 }
 function photosLater() { clearTimeout(fillBusy); fillBusy = setTimeout(fillPhotos, 0); }
@@ -371,7 +504,7 @@ async function saveEdit() {
     await Store.save(it);
     const keep = new Set(photoRefs(it));
     await Store.deletePhotos([...new Set([...edit.originalRefs, ...edit.newRefs])].filter((r) => !keep.has(r)));
-    edit = null; $("#editor").close(); toast("Opgeslagen");
+    edit = null; $("#editor").close(); toast(online() ? "Opgeslagen" : "Bewaard op dit toestel; wordt verstuurd zodra er verbinding is");
   } catch (e) { console.error(e); toast("Opslaan mislukt: " + errText(e)); btn.disabled = false; btn.textContent = "Opslaan"; }
 }
 
@@ -385,7 +518,7 @@ async function cancelEdit() {
 async function deleteItem(btn) {
   if (!btn.classList.contains("armed")) { btn.classList.add("armed"); btn.textContent = "Klik nogmaals om te verwijderen"; setTimeout(() => { if (btn.isConnected) { btn.classList.remove("armed"); btn.textContent = "Verwijderen"; } }, 4000); return; }
   const it = edit.item; const refs = [...new Set([...edit.originalRefs, ...edit.newRefs])];
-  try { await Store.remove(it); await Store.deletePhotos(refs); edit = null; $("#editor").close(); toast("Verwijderd"); }
+  try { await Store.remove(it); await Store.deletePhotos(refs); edit = null; $("#editor").close(); toast(online() ? "Verwijderd" : "Verwijderd op dit toestel; wordt verstuurd zodra er verbinding is"); }
   catch (e) { toast("Verwijderen mislukt: " + errText(e)); }
 }
 
@@ -398,7 +531,6 @@ async function onPhoto(input) {
   session.busy++;
   try {
     const blob = await shrink(file);
-    note.textContent = "Foto opladen…";
     const map = (session.item.soort === "rookkoepel" ? "rookkoepels/" : "gasinstallaties/") + session.item.id;
     const ref = await Store.uploadPhoto(blob, map);
     if (edit !== session) { await Store.deletePhotos([ref]); return; }
@@ -551,7 +683,10 @@ document.addEventListener("click", (ev) => {
   const t = ev.target.closest("button, [data-id]"); if (!t) return;
   if (t.id === "btnInstall") { doInstall(); return; }
   if (t.id === "btnZoomClose") { $("#zoomDlg").close(); return; }
-  if (t.id === "btnLogout") { sb.auth.signOut(); return; }
+  if (t.id === "btnLogout") {
+    if (wachtrij.length) { toast("Er wachten nog wijzigingen. Meld je pas af als alles verstuurd is."); return; }
+    sb.auth.signOut(); return;
+  }
   if (t.matches(".tab")) { state.tab = t.dataset.tab; try { localStorage.setItem("rookgas-tab", state.tab); } catch {} render(); return; }
   if (t.id === "btnNew" || t.matches("[data-new]")) { openEditor(null); return; }
   if (t.id === "btnExport") { $("#exStatus").textContent = ""; $("#exportDlg").showModal(); return; }
@@ -588,17 +723,35 @@ $("#loginForm").addEventListener("submit", async (ev) => {
 });
 
 /* ---------- Opstart ---------- */
+const online = () => navigator.onLine && !geenVerbinding;
 function setSession(s) {
   const was = !!sessie;
   sessie = s;
   if (s && !was) {
-    Store.loadAll();
+    Store.laadBewaard(s).then(() => { Store.loadAll(); verstuur(); });
     kanaal = sb.channel("rookgas-wijzigingen");
     [T_ROOK, T_GAS].forEach((table) => kanaal.on("postgres_changes", { event: "*", schema: "public", table }, () => Store.loadAll()));
     kanaal.subscribe();
   }
-  if (!s) { Store.items = []; Store.loaded = false; if (kanaal) { sb.removeChannel(kanaal); kanaal = null; } }
+  if (!s) { raw[T_ROOK] = []; raw[T_GAS] = []; Store.items = []; Store.loaded = false; if (kanaal) { sb.removeChannel(kanaal); kanaal = null; } }
+  zetSync();
   render();
+}
+
+// Aanmelding zoals bewaard op dit toestel, voor als ze zonder verbinding niet vernieuwd kan worden.
+function bewaardeSessie() {
+  try {
+    const ref = new URL(window.ROOKGAS_CONFIG.supabaseUrl).hostname.split(".")[0];
+    const s = JSON.parse(localStorage.getItem(`sb-${ref}-auth-token`) || "null");
+    return s && s.user ? s : null;
+  } catch { return null; }
+}
+
+// Netwerkverzoeken krijgen een tijdslimiet: met zwak bereik (kelder) blijft niets eindeloos hangen.
+function fetchMetLimiet(url, opts = {}) {
+  const c = new AbortController(); const t = setTimeout(() => c.abort(), 30000);
+  if (opts.signal) { if (opts.signal.aborted) c.abort(); else opts.signal.addEventListener("abort", () => c.abort()); }
+  return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t));
 }
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch((e) => console.error(e));
@@ -607,11 +760,19 @@ render();
 (async () => {
   const cfg = window.ROOKGAS_CONFIG || {};
   if (!window.supabase || !cfg.supabaseUrl || !cfg.supabaseAnonKey) { banner("De app kon niet starten: de koppeling met de database ontbreekt (config.js)."); return; }
-  sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
-  const { data } = await sb.auth.getSession().catch(() => ({ data: {} }));
-  setSession((data && data.session) || null);
-  sb.auth.onAuthStateChange((ev, s) => { if (!!s !== !!sessie) setSession(s); else sessie = s; });
-  // Terug naar de app (gsm): gegevens verversen.
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && sessie) Store.loadAll(); });
+  sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { global: { fetch: fetchMetLimiet } });
+  const { data, error } = await sb.auth.getSession().catch((e) => ({ data: {}, error: e }));
+  // Zonder verbinding kan de aanmelding niet vernieuwd worden; werk dan verder met de bewaarde aanmelding.
+  setSession((data && data.session) || (netwerkFout(error) ? bewaardeSessie() : null));
+  sb.auth.onAuthStateChange((ev, s) => {
+    if (!s && ev !== "SIGNED_OUT") return;
+    if (!!s !== !!sessie) setSession(s); else sessie = s;
+  });
+  // Terug naar de app (gsm) of verbinding terug: gegevens verversen en de wachtrij versturen.
+  const opnieuw = () => { if (sessie) { Store.loadAll(); verstuur(); } };
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) opnieuw(); });
+  addEventListener("online", opnieuw);
+  addEventListener("offline", zetSync);
+  setInterval(() => { if (sessie && wachtrij.length) verstuur(); }, 30000);
 })();
 })();
