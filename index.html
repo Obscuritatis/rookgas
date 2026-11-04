@@ -118,14 +118,14 @@ textarea { min-height: 70px; resize: vertical; }
 .slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .slot .lbl { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 700; }
 .slot .loc { font-size: .92rem; overflow-wrap: anywhere; }
-.thumb { aspect-ratio: 4 / 3; width: 100%; max-width: 100%; border-radius: 8px; background: var(--surface-2); object-fit: cover; display: block; }
+.thumb { aspect-ratio: 4 / 3; width: 100%; max-width: 100%; border-radius: 8px; background: var(--surface-2); object-fit: contain; display: block; }
 .thumb.empty { display: grid; place-items: center; color: var(--muted); font-size: .8rem; border: 1px dashed var(--line); }
 .parts { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font-size: .8rem; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
 .chip.ok { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
 .chip.half { background: var(--gas-soft); border-color: transparent; color: var(--warn); }
 .strip { display: flex; gap: 6px; overflow: hidden; }
-.strip img, .strip .ph { width: 64px; height: 48px; border-radius: 6px; object-fit: cover; flex: none; background: var(--surface-2); }
+.strip img, .strip .ph { width: 64px; height: 48px; border-radius: 6px; object-fit: contain; flex: none; background: var(--surface-2); }
 .foot { font-size: .78rem; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .status { font-weight: 600; }
 .status.ok { color: var(--ok); }
@@ -158,6 +158,11 @@ label.f > span em { font-style: normal; font-weight: 400; }
 .photo { display: grid; grid-template-columns: 140px 1fr; gap: 12px; align-items: center; }
 @media (max-width: 420px) { .photo { grid-template-columns: 1fr; } }
 .photo .thumb { width: 140px; max-width: 100%; }
+.photo img.thumb { cursor: zoom-in; }
+dialog.zoom { border: 0; padding: 0; background: #000; width: 100vw; height: 100dvh; max-width: 100vw; max-height: 100dvh; margin: 0; }
+dialog.zoom::backdrop { background: #000; }
+.zoom img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.zoom .btn { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); }
 @media (max-width: 420px) { .photo .thumb { width: 100%; } }
 .photo .acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .photo .busy { font-size: .85rem; color: var(--muted); }
@@ -275,6 +280,8 @@ input[type="email"] { width: 100%; padding: 10px 12px; border: 1px solid var(--l
     </div>
   </form>
 </dialog>
+
+<dialog class="zoom" id="zoomDlg"><img id="zoomImg" alt=""><button class="btn small" type="button" id="btnZoomClose">Sluiten</button></dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>
 
