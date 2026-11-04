@@ -51,5 +51,8 @@ voor alle gebouwen of voor één gebouw.
 
 ## Opmerkingen
 
-- Opslaan en foto's opladen vraagt een internetverbinding. Zonder netwerk opent de app wel, maar bewaart ze nog niets.
+- **Offline werken**: zonder bereik (bv. in een kelder) kan je gewoon registreren en foto's nemen. Alles gaat naar een
+  wachtrij op het toestel (IndexedDB) en wordt automatisch verstuurd zodra er weer verbinding is. Bovenaan staat dan
+  "Offline · n wijzigingen wachten". Meld je niet af zolang er wijzigingen wachten; de app houdt je daar ook tegen.
+- Zonder verbinding toont de app de gegevens van de laatste keer, en de foto's die je op dat toestel al eens zag.
 - Een gratis Supabase-project wordt gepauzeerd na een week zonder gebruik; je zet het terug aan in het dashboard.

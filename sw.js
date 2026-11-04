@@ -1,6 +1,6 @@
 // Service worker: maakt de app installeerbaar, laat ze openen zonder verbinding (bv. in een stookplaats in de kelder)
-// en houdt foto's bij die al eens getoond werden. Eigen bestanden: altijd eerst de nieuwste versie.
-const APP = "rookgas-app-v2", FOTOS = "rookgas-fotos-v1";
+// en houdt foto's bij die al eens getoond werden, zodat je ze ook zonder bereik ziet. Eigen bestanden: altijd eerst de nieuwste versie.
+const APP = "rookgas-app-v3", FOTOS = "rookgas-fotos-v1";
 const BESTANDEN = ["./", "index.html", "app.js", "config.js", "manifest.webmanifest",
   "vendor/supabase-2.116.0.js", "vendor/exceljs-4.4.0.min.js",
   "fonts/barlow-condensed-latin-600-normal.woff2", "fonts/barlow-condensed-latin-700-normal.woff2",
@@ -39,6 +39,7 @@ async function foto(url) {
   const sleutel = url.origin + url.pathname, cache = await caches.open(FOTOS);
   const bewaard = await cache.match(sleutel);
   if (bewaard) return bewaard;
+  if (url.searchParams.has("offline")) return Response.error();
   const res = await fetch(url.href, { mode: "cors", credentials: "omit" });
   if (res.ok) cache.put(sleutel, res.clone());
   return res;
