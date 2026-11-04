@@ -769,7 +769,21 @@ function fetchMetLimiet(url, opts = {}) {
   return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t));
 }
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch((e) => console.error(e));
+// Nieuwe versie van de app: bij elke terugkeer naar de app nakijken, en dan vanzelf herladen
+// (niet terwijl een fiche openstaat; dan wacht het tot die dicht is).
+if ("serviceWorker" in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  let herladen = false;
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => {}); });
+  }).catch((e) => console.error(e));
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || herladen) return;
+    herladen = true;
+    const probeer = () => { if (!edit && !$("#exportDlg").open) location.reload(); else setTimeout(probeer, 2000); };
+    probeer();
+  });
+}
 showInstall();
 render();
 (async () => {
