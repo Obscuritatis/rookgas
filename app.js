@@ -253,7 +253,7 @@ function photosLater() { clearTimeout(fillBusy); fillBusy = setTimeout(fillPhoto
 function photoRefs(it) {
   const out = [];
   if (it.soort === "rookkoepel") { if (it.koepel?.foto) out.push(it.koepel.foto); if (it.bediening?.foto) out.push(it.bediening.foto); }
-  else if (it.soort === "gas") { for (const p of GAS_PARTS) for (const e of it.onderdelen?.[p.key] || []) if (e.foto) out.push(e.foto); }
+  else if (it.soort === "gas") { for (const p of GAS_PARTS) for (const e of it.onderdelen?.[p.key] || []) { if (e.foto) out.push(e.foto); if (e.foto2) out.push(e.foto2); } }
   return out;
 }
 
@@ -278,7 +278,7 @@ function sortItems(a) { return a.slice().sort((x, y) => (x.gebouw || "").localeC
 function textOf(it) {
   const parts = [it.gebouw, it.code, it.opmerking];
   if (it.soort === "rookkoepel") parts.push(it.koepel?.gang, it.koepel?.verdiep, it.bediening?.lokaal, it.bediening?.verdiep);
-  else for (const p of GAS_PARTS) for (const e of it.onderdelen?.[p.key] || []) parts.push(e.lokaal, e.verdiep, e.opmerking, p.label);
+  else for (const p of GAS_PARTS) for (const e of it.onderdelen?.[p.key] || []) parts.push(e.lokaal, e.verdiep, e.opmerking, e.serienummer, p.label);
   return parts.filter(Boolean).join(" ").toLowerCase();
 }
 function distinct(fn) { const s = new Set(); for (const it of Store.items) for (const v of [].concat(fn(it))) if (v && String(v).trim()) s.add(String(v).trim()); return [...s].sort((a, b) => a.localeCompare(b, "nl", { numeric: true })); }
@@ -373,7 +373,7 @@ function gasCard(it) {
     const mark = st === "ok" ? "✓" : st === "half" ? "…" : "–";
     return `<span class="chip ${st === "ok" ? "ok" : st === "half" ? "half" : ""}">${mark} ${esc(p.label)}${n > 1 ? " ×" + n : ""}</span>`;
   }).join("");
-  const refs = allEntries(it).map((e) => e.foto).filter(Boolean);
+  const refs = allEntries(it).flatMap((e) => [e.foto, e.foto2]).filter(Boolean);
   const strip = refs.slice(0, 6).map((r) => { const u = fotoUrls.get(r); return `<img data-foto="${esc(r)}" ${u ? `src="${esc(u)}"` : ""} alt="" loading="lazy">`; }).join("");
   return `<button type="button" class="card gas" data-id="${esc(it.id)}">
     <div class="card-head"><h3>${esc(it.gebouw || "Gebouw onbekend")}</h3><span class="code">${esc(it.code || "—")}</span></div>
@@ -392,6 +392,8 @@ function nextCode(prefix, soort) {
   return prefix + String(max + 1).padStart(2, "0");
 }
 function blankGasEntry() { return { lokaal: "", verdiep: "", opmerking: "", foto: "" }; }
+// Vermogen als getal: "24,5" en "24.5 kW" worden 24.5; leeg of onleesbaar blijft leeg.
+function kw(v) { const m = String(v || "").replace(",", ".").match(/-?\d+(\.\d+)?/); return m ? Number(m[0]) : null; }
 
 function openEditor(item) {
   const isNew = !item;
@@ -420,9 +422,9 @@ function photoField(path, ref, label) {
   </div>`;
 }
 
-function inp(path, label, value, list, ph = "") {
+function inp(path, label, value, list, ph = "", extra = "") {
   const id = "f-" + path.replace(/[^a-z0-9]/gi, "-");
-  return `<label class="f" for="${id}"><span>${esc(label)}</span><input type="text" id="${id}" data-path="${esc(path)}" value="${esc(value)}" ${list ? `list="${list}"` : ""} placeholder="${esc(ph)}" autocomplete="off"></label>`;
+  return `<label class="f" for="${id}"><span>${esc(label)}</span><input type="text" id="${id}" data-path="${esc(path)}" value="${esc(value)}" ${list ? `list="${list}"` : ""} placeholder="${esc(ph)}" autocomplete="off" ${extra}></label>`;
 }
 
 function drawEditor() {
@@ -459,8 +461,15 @@ function drawEditor() {
             ${inp(base + ".lokaal", "Lokaal / plaats", e.lokaal, "dl-lokaal", "bv. Stookplaats")}
             ${inp(base + ".verdiep", "Verdiep", e.verdiep, "dl-verdiep", "bv. -1")}
           </div>
-          ${inp(base + ".opmerking", "Opmerking", e.opmerking, null, p.key === "ketels" ? "bv. merk, type, vermogen" : "")}
-          ${photoField(base + ".foto", e.foto, "Foto " + p.one)}
+          ${p.key === "ketels" ? `<div class="row">
+            ${inp(base + ".serienummer", "Serienummer", e.serienummer, null, "bv. 21345678", 'autocapitalize="characters" spellcheck="false"')}
+            ${inp(base + ".vermogen", "Vermogen (kW)", e.vermogen, null, "bv. 24", 'inputmode="decimal"')}
+          </div>` : ""}
+          ${inp(base + ".opmerking", "Opmerking", e.opmerking, null, p.key === "ketels" ? "bv. merk, type" : "")}
+          ${p.key === "ketels"
+            ? `<span class="lbl">Foto van de ketel</span>${photoField(base + ".foto", e.foto, "Foto ketel")}
+               <span class="lbl">Foto van het typeplaatje <em>(indien mogelijk)</em></span>${photoField(base + ".foto2", e.foto2, "Foto typeplaatje")}`
+            : photoField(base + ".foto", e.foto, "Foto " + p.one)}
           ${list.length === 1 && i === 0 ? `<div><button class="btn small danger" type="button" data-remove-entry="${p.key}.${i}">Niet aanwezig</button></div>` : ""}
         </div>`;
       });
@@ -490,7 +499,11 @@ function cleaned(item) {
     for (const k of ["gang", "verdiep"]) it.koepel[k] = (it.koepel[k] || "").trim();
     for (const k of ["lokaal", "verdiep"]) it.bediening[k] = (it.bediening[k] || "").trim();
   } else {
-    for (const p of GAS_PARTS) it.onderdelen[p.key] = it.onderdelen[p.key].map((e) => ({ lokaal: (e.lokaal || "").trim(), verdiep: (e.verdiep || "").trim(), opmerking: (e.opmerking || "").trim(), foto: e.foto || "" })).filter((e) => e.lokaal || e.verdiep || e.opmerking || e.foto);
+    for (const p of GAS_PARTS) it.onderdelen[p.key] = it.onderdelen[p.key].map((e) => {
+      const out = { lokaal: (e.lokaal || "").trim(), verdiep: (e.verdiep || "").trim(), opmerking: (e.opmerking || "").trim(), foto: e.foto || "" };
+      if (p.key === "ketels") { out.serienummer = (e.serienummer || "").trim(); out.vermogen = (e.vermogen || "").trim(); out.foto2 = e.foto2 || ""; }
+      return out;
+    }).filter((e) => e.lokaal || e.verdiep || e.opmerking || e.foto || e.foto2 || e.serienummer || e.vermogen);
   }
   return it;
 }
@@ -626,6 +639,8 @@ async function doExport() {
       ws.columns = [
         { header: "Gebouw", key: "gebouw", width: 22 }, { header: "Installatie", key: "code", width: 14 }, { header: "Onderdeel", key: "ond", width: 16 }, { header: "Nr", key: "nr", width: 5 },
         { header: "Lokaal / plaats", key: "lok", width: 22 }, { header: "Verdiep", key: "ver", width: 10 }, { header: "Foto", key: "foto", width: fotos ? PW : 10 },
+        { header: "Foto typeplaatje", key: "foto2", width: fotos ? PW : 10 },
+        { header: "Serienummer", key: "sn", width: 18 }, { header: "Vermogen (kW)", key: "kw", width: 14 },
         { header: "Opmerking", key: "opm", width: 34 }, { header: "Laatst gewijzigd", key: "gw", width: 16 },
       ];
       let r = 2;
@@ -635,10 +650,10 @@ async function doExport() {
           if (!list.length) { const row = ws.addRow({ gebouw: it.gebouw, code: it.code, ond: p.label, nr: "", lok: "niet geregistreerd", gw: datum(it.gewijzigd) }); row.font = { italic: true, color: { argb: "FF8A6200" } }; r++; continue; }
           for (let i = 0; i < list.length; i++) {
             const e = list[i];
-            const row = ws.addRow({ gebouw: it.gebouw, code: it.code, ond: p.label, nr: i + 1, lok: e.lokaal, ver: e.verdiep, foto: e.foto ? (fotos ? "" : "ja") : "geen", opm: [e.opmerking, i === 0 && p.key === "gasinstallatie" ? it.opmerking : ""].filter(Boolean).join(" — "), gw: datum(it.gewijzigd) });
+            const row = ws.addRow({ gebouw: it.gebouw, code: it.code, ond: p.label, nr: i + 1, lok: e.lokaal, ver: e.verdiep, foto: e.foto ? (fotos ? "" : "ja") : "geen", foto2: p.key !== "ketels" ? "" : e.foto2 ? (fotos ? "" : "ja") : "geen", sn: e.serienummer || "", kw: kw(e.vermogen) ?? (e.vermogen || ""), opm: [e.opmerking, i === 0 && p.key === "gasinstallatie" ? it.opmerking : ""].filter(Boolean).join(" — "), gw: datum(it.gewijzigd) });
             row.alignment = { vertical: "top", wrapText: true };
-            if (fotos && e.foto) row.height = PH;
-            await put(ws, e.foto, 7, r);
+            if (fotos && (e.foto || e.foto2)) row.height = PH;
+            await put(ws, e.foto, 7, r); await put(ws, e.foto2, 8, r);
             r++;
           }
         }
