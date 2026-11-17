@@ -113,6 +113,7 @@ textarea { min-height: 70px; resize: vertical; }
 .code { font-family: var(--f-mono); font-weight: 500; font-size: .85rem; padding: 2px 8px; border-radius: 6px; }
 .rook .code { background: var(--rook-soft); color: var(--rook); }
 .gas .code { background: var(--gas-soft); color: var(--gas); }
+.card h3 small { display: block; font-family: var(--f-body); font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .card h3 { margin: 0; font-family: var(--f-display); font-weight: 600; font-size: 1.15rem; line-height: 1.2; min-width: 0; overflow-wrap: anywhere; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -244,7 +245,9 @@ input[type="email"] { width: 100%; padding: 10px 12px; border: 1px solid var(--l
   <div id="app" hidden>
     <div class="toolbar">
       <input class="search" type="search" id="q" placeholder="Zoek op code, gang, lokaal, verdiep…" aria-label="Zoeken">
+      <select id="fHoofd" aria-label="Filter op hoofdgebouw"><option value="">Alle hoofdgebouwen</option></select>
       <select id="fGebouw" aria-label="Filter op gebouw"><option value="">Alle gebouwen</option></select>
+      <button class="btn" type="button" id="btnHoofd" hidden>Hoofdgebouw instellen</button>
       <button class="btn primary" type="button" id="btnNew">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         <span id="btnNewLbl">Nieuwe rookkoepel</span>
@@ -257,6 +260,18 @@ input[type="email"] { width: 100%; padding: 10px 12px; border: 1px solid var(--l
 
 <dialog class="sheet" id="editor"><form id="editForm" method="dialog" novalidate></form></dialog>
 
+<dialog class="sheet" id="hoofdDlg">
+  <form method="dialog">
+    <div class="sheet-head"><h2>Hoofdgebouw instellen</h2></div>
+    <div class="sheet-body">
+      <p class="hint">Voor alle <b id="hdAantal"></b> van gebouw <b id="hdGebouw"></b>, zowel rookkoepels als gas. De rest van de fiches blijft zoals ze is.</p>
+      <label class="f" for="hdNaam"><span>Hoofdgebouw / site</span><input type="text" id="hdNaam" list="hdLijst" autocomplete="off" placeholder="bv. Psychiatrisch ziekenhuis"></label>
+      <datalist id="hdLijst"></datalist>
+    </div>
+    <div class="sheet-foot"><div class="right"><button class="btn" type="button" id="hdAnnuleer">Annuleren</button><button class="btn primary" type="button" id="hdOk">Toepassen</button></div></div>
+  </form>
+</dialog>
+
 <dialog class="sheet" id="exportDlg">
   <form method="dialog" id="exportForm">
     <div class="sheet-head"><h2>Excel-export</h2><button class="btn small" value="cancel" type="submit">Sluiten</button></div>
@@ -266,6 +281,7 @@ input[type="email"] { width: 100%; padding: 10px 12px; border: 1px solid var(--l
         <label class="check"><input type="checkbox" id="exRook" checked> Tabblad Rookkoepels</label>
         <label class="check"><input type="checkbox" id="exGas" checked> Tabblad Gasinstallaties</label>
         <label class="check"><input type="checkbox" id="exFotos" checked> Foto's als miniatuur in de cellen</label>
+        <label class="f"><span>Hoofdgebouw</span><select id="exHoofd"><option value="">Alle hoofdgebouwen</option></select></label>
         <label class="f"><span>Gebouw</span><select id="exGebouw"><option value="">Alle gebouwen</option></select></label>
         <p class="hint">Met foto's wordt het bestand groter en duurt de export iets langer. Zonder foto's krijg je een lichte lijst om te filteren en sorteren.</p>
       </fieldset>

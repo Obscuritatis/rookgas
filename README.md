@@ -18,7 +18,11 @@ Bij ketels ook serienummer, vermogen (kW) en een tweede foto van het typeplaatje
 Is een onderdeel er niet, vink dan **Niet aanwezig** aan; een installatie is *Volledig* als elk onderdeel ingevuld (met foto) of als niet aanwezig aangevinkt is.
 
 **Excel-export**: tabbladen *Rookkoepels* en *Gasinstallaties*, met filters en optioneel de foto's als miniatuur in de cellen,
-voor alle gebouwen of voor één gebouw.
+voor alles, één hoofdgebouw of één gebouw.
+
+**Hoofdgebouw / site** (bv. *Psychiatrisch ziekenhuis*) groepeert gebouwen. Filter er bovenaan op, of kies het in de Excel-export.
+Kies je een gebouw in de filter, dan zet **Hoofdgebouw instellen** het hoofdgebouw in één keer bij alle fiches van dat gebouw.
+Bij een nieuwe fiche vult de app het hoofdgebouw zelf in als het gebouw al gekend is.
 
 ## Eenmalige opzet
 

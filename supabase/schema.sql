@@ -44,6 +44,13 @@ create table if not exists public.gasinstallaties (
 );
 create index if not exists gasinstallaties_gebouw_idx on public.gasinstallaties(gebouw, code);
 
+-- Hoofdgebouw / site (bv. "Psychiatrisch ziekenhuis") boven het gebouw, om per site te filteren en te exporteren.
+-- Bestaande fiches krijgen een lege waarde en blijven verder ongewijzigd.
+alter table public.rookkoepels add column if not exists hoofdgebouw text not null default '';
+alter table public.gasinstallaties add column if not exists hoofdgebouw text not null default '';
+create index if not exists rookkoepels_hoofdgebouw_idx on public.rookkoepels(hoofdgebouw, gebouw, code);
+create index if not exists gasinstallaties_hoofdgebouw_idx on public.gasinstallaties(hoofdgebouw, gebouw, code);
+
 alter table public.rookkoepels enable row level security;
 alter table public.gasinstallaties enable row level security;
 

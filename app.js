@@ -36,21 +36,21 @@ let kanaal = null;
 
 // Rij in de database <-> fiche in de app
 function fromRook(r) {
-  return { id: r.id, soort: "rookkoepel", gebouw: r.gebouw || "", code: r.code || "", opmerking: r.opmerking || "", aangemaakt: r.aangemaakt, gewijzigd: r.gewijzigd,
+  return { id: r.id, soort: "rookkoepel", hoofdgebouw: r.hoofdgebouw || "", gebouw: r.gebouw || "", code: r.code || "", opmerking: r.opmerking || "", aangemaakt: r.aangemaakt, gewijzigd: r.gewijzigd,
     koepel: { gang: r.koepel_gang || "", verdiep: r.koepel_verdiep || "", foto: r.koepel_foto || "" },
     bediening: { lokaal: r.bediening_lokaal || "", verdiep: r.bediening_verdiep || "", foto: r.bediening_foto || "" } };
 }
 function toRook(it) {
-  return { id: it.id, gebouw: it.gebouw, code: it.code, opmerking: it.opmerking,
+  return { id: it.id, hoofdgebouw: it.hoofdgebouw || "", gebouw: it.gebouw, code: it.code, opmerking: it.opmerking,
     koepel_gang: it.koepel.gang, koepel_verdiep: it.koepel.verdiep, koepel_foto: it.koepel.foto || null,
     bediening_lokaal: it.bediening.lokaal, bediening_verdiep: it.bediening.verdiep, bediening_foto: it.bediening.foto || null,
     gewijzigd: new Date().toISOString() };
 }
 function fromGas(r) {
-  return { id: r.id, soort: "gas", gebouw: r.gebouw || "", code: r.code || "", opmerking: r.opmerking || "", aangemaakt: r.aangemaakt, gewijzigd: r.gewijzigd, onderdelen: r.onderdelen || {} };
+  return { id: r.id, soort: "gas", hoofdgebouw: r.hoofdgebouw || "", gebouw: r.gebouw || "", code: r.code || "", opmerking: r.opmerking || "", aangemaakt: r.aangemaakt, gewijzigd: r.gewijzigd, onderdelen: r.onderdelen || {} };
 }
 function toGas(it) {
-  return { id: it.id, gebouw: it.gebouw, code: it.code, opmerking: it.opmerking, onderdelen: it.onderdelen, gewijzigd: new Date().toISOString() };
+  return { id: it.id, hoofdgebouw: it.hoofdgebouw || "", gebouw: it.gebouw, code: it.code, opmerking: it.opmerking, onderdelen: it.onderdelen, gewijzigd: new Date().toISOString() };
 }
 
 /* ---------- Opslag met wachtrij (offline werken) ----------
@@ -188,9 +188,24 @@ function voerUit(it) {
   if (it.actie === "foto") return sb.storage.from(BUCKET).upload(it.pad, it.blob, { contentType: "image/jpeg", upsert: true });
   if (it.actie === "wis") return sb.storage.from(BUCKET).remove(it.paden);
   const q = sb.from(it.tabel);
-  if (it.actie === "upsert") return q.upsert(it.rij);
+  if (it.actie === "upsert") return upsertRij(q, it);
   if (it.actie === "delete") return q.delete().eq("id", it.id);
   return { error: null };
+}
+
+// Zolang de kolom "hoofdgebouw" nog niet in de database staat (SQL-update niet uitgevoerd), gaat de rest
+// van de fiche toch door. Zo gaat er geen registratie verloren.
+let hoofdKolomOntbreekt = false;
+async function upsertRij(q, it) {
+  const zonder = () => { const { hoofdgebouw, ...rest } = it.rij; return q.upsert(rest); };
+  if (hoofdKolomOntbreekt) return zonder();
+  const res = await q.upsert(it.rij);
+  if (res?.error && /hoofdgebouw/i.test(String(res.error.message || ""))) {
+    hoofdKolomOntbreekt = true;
+    toast("Hoofdgebouw kon niet bewaard worden: voer eerst de SQL-update uit in Supabase.");
+    return zonder();
+  }
+  return res;
 }
 
 // Verstuurt de wachtrij in volgorde. Lukt het niet door de verbinding, dan blijft alles staan voor later.
@@ -270,13 +285,14 @@ async function shrink(file, max = 1600, q = 0.82) {
 }
 
 /* ---------- Toestand ---------- */
-const state = { tab: "rook", q: "", gebouw: "" };
+const state = { tab: "rook", q: "", hoofd: "", gebouw: "" };
 try { const t = localStorage.getItem("rookgas-tab"); if (t === "rook" || t === "gas") state.tab = t; } catch {}
 
 function itemsOf(tab) { return Store.items.filter((i) => i.soort === (tab === "rook" ? "rookkoepel" : "gas")); }
-function sortItems(a) { return a.slice().sort((x, y) => (x.gebouw || "").localeCompare(y.gebouw || "", "nl") || (x.code || "").localeCompare(y.code || "", "nl", { numeric: true })); }
+const cmp = (a, b) => (a || "").localeCompare(b || "", "nl", { numeric: true });
+function sortItems(a) { return a.slice().sort((x, y) => cmp(x.hoofdgebouw, y.hoofdgebouw) || (x.gebouw || "").localeCompare(y.gebouw || "", "nl") || (x.code || "").localeCompare(y.code || "", "nl", { numeric: true })); }
 function textOf(it) {
-  const parts = [it.gebouw, it.code, it.opmerking];
+  const parts = [it.hoofdgebouw, it.gebouw, it.code, it.opmerking];
   if (it.soort === "rookkoepel") parts.push(it.koepel?.gang, it.koepel?.verdiep, it.bediening?.lokaal, it.bediening?.verdiep);
   else for (const p of GAS_PARTS) for (const e of it.onderdelen?.[p.key] || []) parts.push(e.lokaal, e.verdiep, e.opmerking, e.serienummer, p.label);
   return parts.filter(Boolean).join(" ").toLowerCase();
@@ -320,17 +336,14 @@ function render() {
   for (const b of document.querySelectorAll(".tab")) b.setAttribute("aria-selected", String(b.dataset.tab === state.tab));
   $("#btnNewLbl").textContent = state.tab === "rook" ? "Nieuwe rookkoepel" : "Nieuwe gasinstallatie";
 
-  const gebouwen = distinct((i) => i.gebouw);
-  for (const sel of [$("#fGebouw"), $("#exGebouw")]) {
-    const cur = sel.value;
-    sel.innerHTML = `<option value="">Alle gebouwen</option>` + gebouwen.map((g) => `<option>${esc(g)}</option>`).join("");
-    sel.value = gebouwen.includes(cur) ? cur : "";
-  }
-  state.gebouw = $("#fGebouw").value;
+  vulFilters($("#fHoofd"), $("#fGebouw"));
+  vulFilters($("#exHoofd"), $("#exGebouw"));
+  state.hoofd = $("#fHoofd").value; state.gebouw = $("#fGebouw").value;
+  $("#btnHoofd").hidden = !state.gebouw;
 
   let list = itemsOf(state.tab);
   const total = list.length;
-  if (state.gebouw) list = list.filter((i) => i.gebouw === state.gebouw);
+  list = list.filter((i) => past(i, state.hoofd, state.gebouw));
   if (state.q) { const q = state.q.toLowerCase(); list = list.filter((i) => textOf(i).includes(q)); }
   list = sortItems(list);
 
@@ -354,13 +367,59 @@ function render() {
   photosLater();
 }
 
+// Filter op hoofdgebouw (bv. het psychiatrisch ziekenhuis) en daarbinnen op gebouw.
+// GEEN_HOOFD toont de fiches waar nog geen hoofdgebouw bij staat.
+const GEEN_HOOFD = "__zonder__";
+function past(it, hoofd, gebouw) {
+  if (hoofd === GEEN_HOOFD ? !!it.hoofdgebouw : hoofd && it.hoofdgebouw !== hoofd) return false;
+  return !gebouw || it.gebouw === gebouw;
+}
+function vulFilters(selH, selG) {
+  const hoofden = distinct((i) => i.hoofdgebouw);
+  const zonder = Store.items.some((i) => !i.hoofdgebouw);
+  let cur = selH.value;
+  selH.innerHTML = `<option value="">Alle hoofdgebouwen</option>` + hoofden.map((g) => `<option>${esc(g)}</option>`).join("") +
+    (zonder && hoofden.length ? `<option value="${GEEN_HOOFD}">(zonder hoofdgebouw)</option>` : "");
+  selH.value = hoofden.includes(cur) || (cur === GEEN_HOOFD && zonder && hoofden.length) ? cur : "";
+  const h = selH.value;
+  const gebouwen = distinct((i) => (past(i, h, "") ? i.gebouw : null));
+  cur = selG.value;
+  selG.innerHTML = `<option value="">Alle gebouwen</option>` + gebouwen.map((g) => `<option>${esc(g)}</option>`).join("");
+  selG.value = gebouwen.includes(cur) ? cur : "";
+}
+function kaartTitel(it) {
+  return `<div class="card-head"><h3>${it.hoofdgebouw ? `<small>${esc(it.hoofdgebouw)}</small>` : ""}${esc(it.gebouw || "Gebouw onbekend")}</h3><span class="code">${esc(it.code || "—")}</span></div>`;
+}
+
+// Hoofdgebouw in één keer instellen voor alle fiches (rookkoepels en gas) van het gekozen gebouw.
+function openHoofdDlg() {
+  const g = state.gebouw; if (!g) return;
+  const items = Store.items.filter((i) => i.gebouw === g);
+  const huidig = [...new Set(items.map((i) => i.hoofdgebouw).filter(Boolean))];
+  $("#hdGebouw").textContent = g;
+  $("#hdAantal").textContent = `${items.length} ${items.length === 1 ? "fiche" : "fiches"}`;
+  $("#hdLijst").innerHTML = distinct((i) => i.hoofdgebouw).map((v) => `<option value="${esc(v)}">`).join("");
+  $("#hdNaam").value = huidig.length === 1 ? huidig[0] : "";
+  $("#hoofdDlg").showModal(); $("#hdNaam").focus();
+}
+async function bewaarHoofd() {
+  const g = state.gebouw, naam = $("#hdNaam").value.trim();
+  const items = Store.items.filter((i) => i.gebouw === g && (i.hoofdgebouw || "") !== naam);
+  $("#hoofdDlg").close();
+  if (!items.length) return;
+  await Store.wacht(items.map((it) => { const n = { ...it, hoofdgebouw: naam }; const isRook = n.soort === "rookkoepel";
+    return { actie: "upsert", tabel: isRook ? T_ROOK : T_GAS, rij: isRook ? toRook(n) : toGas(n) }; }));
+  if (naam) { state.hoofd = naam; $("#fHoofd").value = naam; render(); }
+  toast(`Hoofdgebouw ${naam ? `"${naam}"` : "gewist"} bij ${items.length} ${items.length === 1 ? "fiche" : "fiches"}`);
+}
+
 // Niet hertekenen terwijl iemand in de zoekbalk typt; dat zou de cursor verplaatsen.
 function renderSafe() { render(); }
 
 function rookCard(it) {
   const ok = rookDone(it);
   return `<button type="button" class="card rook" data-id="${esc(it.id)}">
-    <div class="card-head"><h3>${esc(it.gebouw || "Gebouw onbekend")}</h3><span class="code">${esc(it.code || "—")}</span></div>
+    ${kaartTitel(it)}
     <div class="pair">
       <div class="slot"><span class="lbl">Koepel</span>${thumb(it.koepel?.foto, "Foto koepel")}<span class="loc">${esc(loc(it.koepel?.gang, verd(it.koepel?.verdiep)) || "Locatie ontbreekt")}</span></div>
       <div class="slot"><span class="lbl">Bediening</span>${thumb(it.bediening?.foto, "Foto bediening")}<span class="loc">${esc(loc(it.bediening?.lokaal, verd(it.bediening?.verdiep)) || "Locatie ontbreekt")}</span></div>
@@ -380,7 +439,7 @@ function gasCard(it) {
   const refs = allEntries(it).flatMap((e) => [e.foto, e.foto2]).filter(Boolean);
   const strip = refs.slice(0, 6).map((r) => { const u = fotoUrls.get(r); return `<img data-foto="${esc(r)}" ${u ? `src="${esc(u)}"` : ""} alt="" loading="lazy">`; }).join("");
   return `<button type="button" class="card gas" data-id="${esc(it.id)}">
-    <div class="card-head"><h3>${esc(it.gebouw || "Gebouw onbekend")}</h3><span class="code">${esc(it.code || "—")}</span></div>
+    ${kaartTitel(it)}
     <div class="parts">${chips}</div>
     ${strip ? `<div class="strip">${strip}</div>` : ""}
     <div class="foot"><span class="status ${ok ? "ok" : "todo"}">${ok ? "Volledig" : "Aan te vullen"}</span><span>${refs.length} foto's · gewijzigd ${esc(fmtDate(it.gewijzigd))}</span></div>
@@ -402,15 +461,22 @@ function kw(v) { const m = String(v || "").replace(",", ".").match(/-?\d+(\.\d+)
 function openEditor(item) {
   const isNew = !item;
   if (isNew) {
-    const g = state.gebouw || "";
+    const g = state.gebouw || "", h = state.hoofd && state.hoofd !== GEEN_HOOFD ? state.hoofd : (state.gebouw && hoofdVan(state.gebouw)) || "";
     item = state.tab === "rook"
-      ? { id: uid(), soort: "rookkoepel", gebouw: g, code: nextCode("RK-", "rookkoepel"), koepel: { gang: "", verdiep: "", foto: "" }, bediening: { lokaal: "", verdiep: "", foto: "" }, opmerking: "" }
-      : { id: uid(), soort: "gas", gebouw: g, code: nextCode("GAS-", "gas"), onderdelen: Object.fromEntries(GAS_PARTS.map((p) => [p.key, [blankGasEntry()]])), opmerking: "" };
+      ? { id: uid(), soort: "rookkoepel", hoofdgebouw: h, gebouw: g, code: nextCode("RK-", "rookkoepel"), koepel: { gang: "", verdiep: "", foto: "" }, bediening: { lokaal: "", verdiep: "", foto: "" }, opmerking: "" }
+      : { id: uid(), soort: "gas", hoofdgebouw: h, gebouw: g, code: nextCode("GAS-", "gas"), onderdelen: Object.fromEntries(GAS_PARTS.map((p) => [p.key, [blankGasEntry()]])), opmerking: "" };
   } else item = JSON.parse(JSON.stringify(item));
   if (item.soort === "gas") { item.onderdelen = item.onderdelen || {}; item.onderdelen.niet_aanwezig = { ...(item.onderdelen.niet_aanwezig || {}) }; for (const p of GAS_PARTS) if (!Array.isArray(item.onderdelen[p.key])) item.onderdelen[p.key] = []; }
   edit = { item, isNew, originalRefs: new Set(photoRefs(item)), newRefs: new Set(), busy: 0 };
   drawEditor();
   $("#editor").showModal();
+}
+
+// Hoofdgebouw dat al bij dit gebouw hoort (vaakst gebruikt), om het automatisch in te vullen.
+function hoofdVan(gebouw) {
+  const tel = new Map();
+  for (const i of Store.items) if (i.gebouw === gebouw && i.hoofdgebouw) tel.set(i.hoofdgebouw, (tel.get(i.hoofdgebouw) || 0) + 1);
+  return [...tel].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
 }
 
 function dl(id, values) { return `<datalist id="${id}">${values.map((v) => `<option value="${esc(v)}">`).join("")}</datalist>`; }
@@ -435,12 +501,14 @@ function drawEditor() {
   const it = edit.item;
   const form = $("#editForm");
   const scroll = form.querySelector(".sheet-body")?.scrollTop || 0;
-  const lists = dl("dl-gebouw", distinct((i) => i.gebouw)) +
+  const lists = dl("dl-hoofd", distinct((i) => i.hoofdgebouw)) + dl("dl-gebouw", distinct((i) => i.gebouw)) +
     dl("dl-verdiep", distinct((i) => i.soort === "rookkoepel" ? [i.koepel?.verdiep, i.bediening?.verdiep] : allEntries(i).map((e) => e.verdiep)).concat(["-1", "0", "1", "2", "3"]).filter((v, i, a) => a.indexOf(v) === i)) +
     dl("dl-gang", distinct((i) => i.koepel?.gang)) +
     dl("dl-lokaal", distinct((i) => i.soort === "rookkoepel" ? i.bediening?.lokaal : allEntries(i).map((e) => e.lokaal)));
   let body = `<fieldset><legend>Algemeen</legend><div class="row">
-      ${inp("gebouw", "Gebouw / site", it.gebouw, "dl-gebouw", "bv. Hoofdgebouw")}
+      ${inp("hoofdgebouw", "Hoofdgebouw / site", it.hoofdgebouw || "", "dl-hoofd", "bv. Psychiatrisch ziekenhuis")}
+      ${inp("gebouw", "Gebouw", it.gebouw, "dl-gebouw", "bv. Paviljoen A")}
+    </div><div class="row">
       ${inp("code", it.soort === "rookkoepel" ? "Nummer koepel" : "Naam installatie", it.code, null, it.soort === "rookkoepel" ? "RK-01" : "GAS-01")}
     </div></fieldset>`;
   if (it.soort === "rookkoepel") {
@@ -505,7 +573,7 @@ function setPath(obj, path, v) { const ks = path.split("."); const last = ks.pop
 
 function cleaned(item) {
   const it = JSON.parse(JSON.stringify(item));
-  for (const k of ["gebouw", "code", "opmerking"]) it[k] = (it[k] || "").trim();
+  for (const k of ["hoofdgebouw", "gebouw", "code", "opmerking"]) it[k] = (it[k] || "").trim();
   if (it.soort === "rookkoepel") {
     for (const k of ["gang", "verdiep"]) it.koepel[k] = (it.koepel[k] || "").trim();
     for (const k of ["lokaal", "verdiep"]) it.bediening[k] = (it.bediening[k] || "").trim();
@@ -615,14 +683,14 @@ function styleSheet(ws, color) {
 
 async function doExport() {
   const status = $("#exStatus"); const btn = $("#btnDoExport");
-  const wantRook = $("#exRook").checked, wantGas = $("#exGas").checked, fotos = $("#exFotos").checked, geb = $("#exGebouw").value;
+  const wantRook = $("#exRook").checked, wantGas = $("#exGas").checked, fotos = $("#exFotos").checked, geb = $("#exGebouw").value, hoofd = $("#exHoofd").value;
   if (!wantRook && !wantGas) { status.textContent = "Kies minstens één tabblad."; return; }
   btn.disabled = true;
   try {
     status.textContent = "Excel-bibliotheek laden…";
     const ExcelJS = await loadExcel();
     const wb = new ExcelJS.Workbook(); wb.creator = "Rookgas"; wb.created = new Date();
-    const pick = (soort) => sortItems(Store.items.filter((i) => i.soort === soort && (!geb || i.gebouw === geb)));
+    const pick = (soort) => sortItems(Store.items.filter((i) => i.soort === soort && past(i, hoofd, geb)));
     const PH = Math.ceil((BOX + 12) * 0.75); // rijhoogte in punten (1 pt = 4/3 px)
     const PW = 31; // kolombreedte voor foto's, ruim BOX pixels
     let n = 0; const totalPhotos = (wantRook ? pick("rookkoepel").flatMap(photoRefs).length : 0) + (wantGas ? pick("gas").flatMap(photoRefs).length : 0);
@@ -638,17 +706,17 @@ async function doExport() {
     if (wantRook) {
       const ws = wb.addWorksheet("Rookkoepels");
       ws.columns = [
-        { header: "Gebouw", key: "gebouw", width: 22 }, { header: "Nummer", key: "code", width: 12 },
+        { header: "Hoofdgebouw", key: "hoofd", width: 24 }, { header: "Gebouw", key: "gebouw", width: 22 }, { header: "Nummer", key: "code", width: 12 },
         { header: "Koepel – gang", key: "kg", width: 22 }, { header: "Koepel – verdiep", key: "kv", width: 14 }, { header: "Foto koepel", key: "kf", width: fotos ? PW : 12 },
         { header: "Bediening – lokaal", key: "bl", width: 22 }, { header: "Bediening – verdiep", key: "bv", width: 16 }, { header: "Foto bediening", key: "bf", width: fotos ? PW : 12 },
         { header: "Opmerking", key: "opm", width: 34 }, { header: "Status", key: "st", width: 14 }, { header: "Laatst gewijzigd", key: "gw", width: 16 },
       ];
       let r = 2;
       for (const it of pick("rookkoepel")) {
-        const row = ws.addRow({ gebouw: it.gebouw, code: it.code, kg: it.koepel?.gang, kv: it.koepel?.verdiep, kf: it.koepel?.foto ? (fotos ? "" : "ja") : "geen", bl: it.bediening?.lokaal, bv: it.bediening?.verdiep, bf: it.bediening?.foto ? (fotos ? "" : "ja") : "geen", opm: it.opmerking, st: rookDone(it) ? "Volledig" : "Aan te vullen", gw: datum(it.gewijzigd) });
+        const row = ws.addRow({ hoofd: it.hoofdgebouw, gebouw: it.gebouw, code: it.code, kg: it.koepel?.gang, kv: it.koepel?.verdiep, kf: it.koepel?.foto ? (fotos ? "" : "ja") : "geen", bl: it.bediening?.lokaal, bv: it.bediening?.verdiep, bf: it.bediening?.foto ? (fotos ? "" : "ja") : "geen", opm: it.opmerking, st: rookDone(it) ? "Volledig" : "Aan te vullen", gw: datum(it.gewijzigd) });
         row.alignment = { vertical: "top", wrapText: true };
         if (fotos) row.height = PH;
-        await put(ws, it.koepel?.foto, 5, r); await put(ws, it.bediening?.foto, 8, r);
+        await put(ws, it.koepel?.foto, 6, r); await put(ws, it.bediening?.foto, 9, r);
         r++;
       }
       ws.getColumn("gw").numFmt = "dd/mm/yyyy";
@@ -657,7 +725,7 @@ async function doExport() {
     if (wantGas) {
       const ws = wb.addWorksheet("Gasinstallaties");
       ws.columns = [
-        { header: "Gebouw", key: "gebouw", width: 22 }, { header: "Installatie", key: "code", width: 14 }, { header: "Onderdeel", key: "ond", width: 16 }, { header: "Nr", key: "nr", width: 5 },
+        { header: "Hoofdgebouw", key: "hoofd", width: 24 }, { header: "Gebouw", key: "gebouw", width: 22 }, { header: "Installatie", key: "code", width: 14 }, { header: "Onderdeel", key: "ond", width: 16 }, { header: "Nr", key: "nr", width: 5 },
         { header: "Lokaal / plaats", key: "lok", width: 22 }, { header: "Verdiep", key: "ver", width: 10 }, { header: "Foto", key: "foto", width: fotos ? PW : 10 },
         { header: "Foto typeplaatje", key: "foto2", width: fotos ? PW : 10 },
         { header: "Serienummer", key: "sn", width: 18 }, { header: "Vermogen (kW)", key: "kw", width: 14 },
@@ -667,14 +735,14 @@ async function doExport() {
       for (const it of pick("gas")) {
         for (const p of GAS_PARTS) {
           const list = it.onderdelen?.[p.key] || [];
-          if (afwezig(it, p.key)) { const row = ws.addRow({ gebouw: it.gebouw, code: it.code, ond: p.label, nr: "", lok: "niet aanwezig", gw: datum(it.gewijzigd) }); row.font = { italic: true, color: { argb: "FF5B6875" } }; r++; continue; }
-          if (!list.length) { const row = ws.addRow({ gebouw: it.gebouw, code: it.code, ond: p.label, nr: "", lok: "niet geregistreerd", gw: datum(it.gewijzigd) }); row.font = { italic: true, color: { argb: "FF8A6200" } }; r++; continue; }
+          if (afwezig(it, p.key)) { const row = ws.addRow({ hoofd: it.hoofdgebouw, gebouw: it.gebouw, code: it.code, ond: p.label, nr: "", lok: "niet aanwezig", gw: datum(it.gewijzigd) }); row.font = { italic: true, color: { argb: "FF5B6875" } }; r++; continue; }
+          if (!list.length) { const row = ws.addRow({ hoofd: it.hoofdgebouw, gebouw: it.gebouw, code: it.code, ond: p.label, nr: "", lok: "niet geregistreerd", gw: datum(it.gewijzigd) }); row.font = { italic: true, color: { argb: "FF8A6200" } }; r++; continue; }
           for (let i = 0; i < list.length; i++) {
             const e = list[i];
-            const row = ws.addRow({ gebouw: it.gebouw, code: it.code, ond: p.label, nr: i + 1, lok: e.lokaal, ver: e.verdiep, foto: e.foto ? (fotos ? "" : "ja") : "geen", foto2: p.key !== "ketels" ? "" : e.foto2 ? (fotos ? "" : "ja") : "geen", sn: e.serienummer || "", kw: kw(e.vermogen) ?? (e.vermogen || ""), opm: [e.opmerking, i === 0 && p.key === "gasinstallatie" ? it.opmerking : ""].filter(Boolean).join(" — "), gw: datum(it.gewijzigd) });
+            const row = ws.addRow({ hoofd: it.hoofdgebouw, gebouw: it.gebouw, code: it.code, ond: p.label, nr: i + 1, lok: e.lokaal, ver: e.verdiep, foto: e.foto ? (fotos ? "" : "ja") : "geen", foto2: p.key !== "ketels" ? "" : e.foto2 ? (fotos ? "" : "ja") : "geen", sn: e.serienummer || "", kw: kw(e.vermogen) ?? (e.vermogen || ""), opm: [e.opmerking, i === 0 && p.key === "gasinstallatie" ? it.opmerking : ""].filter(Boolean).join(" — "), gw: datum(it.gewijzigd) });
             row.alignment = { vertical: "top", wrapText: true };
             if (fotos && (e.foto || e.foto2)) row.height = PH;
-            await put(ws, e.foto, 7, r); await put(ws, e.foto2, 8, r);
+            await put(ws, e.foto, 8, r); await put(ws, e.foto2, 9, r);
             r++;
           }
         }
@@ -687,7 +755,8 @@ async function doExport() {
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const d = new Date(); const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const filename = `inventaris-rookkoepels-gas${geb ? "-" + geb.replace(/[^\w-]+/g, "_") : ""}-${stamp}.xlsx`;
+    const naamDeel = [hoofd && hoofd !== GEEN_HOOFD ? hoofd : "", geb].filter(Boolean).map((x) => "-" + x.replace(/[^\w-]+/g, "_")).join("");
+    const filename = `inventaris-rookkoepels-gas${naamDeel}-${stamp}.xlsx`;
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; document.body.append(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
     status.textContent = "Klaar. Het Excel-bestand staat bij je downloads.";
@@ -727,6 +796,9 @@ document.addEventListener("click", (ev) => {
   if (t.id === "btnNew" || t.matches("[data-new]")) { openEditor(null); return; }
   if (t.id === "btnExport") { $("#exStatus").textContent = ""; $("#exportDlg").showModal(); return; }
   if (t.id === "btnDoExport") { doExport(); return; }
+  if (t.id === "btnHoofd") { openHoofdDlg(); return; }
+  if (t.id === "hdOk") { bewaarHoofd(); return; }
+  if (t.id === "hdAnnuleer") { $("#hoofdDlg").close(); return; }
   if (t.matches(".card[data-id]")) { const it = Store.items.find((i) => i.id === t.dataset.id); if (it) openEditor(it); return; }
   if (!edit) return;
   if (t.matches("[data-cancel]")) { cancelEdit(); return; }
@@ -744,6 +816,12 @@ document.addEventListener("input", (ev) => {
 document.addEventListener("change", (ev) => {
   const t = ev.target;
   if (t.id === "fGebouw") { state.gebouw = t.value; render(); return; }
+  if (t.id === "fHoofd") { state.hoofd = t.value; render(); return; }
+  if (t.id === "exHoofd") { vulFilters($("#exHoofd"), $("#exGebouw")); return; }
+  if (edit && t.dataset.path === "gebouw" && !(edit.item.hoofdgebouw || "").trim()) {
+    const h = hoofdVan(t.value.trim()); const f = $("#f-hoofdgebouw");
+    if (h && f) { edit.item.hoofdgebouw = h; f.value = h; }
+  }
   if (t.matches("input[type=file][data-photo]")) onPhoto(t);
   if (edit && t.matches("input[data-afwezig]")) {
     const k = t.dataset.afwezig;
@@ -752,6 +830,7 @@ document.addEventListener("change", (ev) => {
     drawEditor();
   }
 });
+$("#hdNaam").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); bewaarHoofd(); } });
 $("#editor").addEventListener("cancel", (ev) => { ev.preventDefault(); cancelEdit(); });
 $("#loginForm").addEventListener("submit", async (ev) => {
   ev.preventDefault();
